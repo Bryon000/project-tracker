@@ -4,6 +4,7 @@ import { useRef, useState, useTransition } from "react";
 import { ProgressBar } from "./ProgressBar";
 import { SubtaskRow } from "./SubtaskRow";
 import { categoryProgress } from "@/lib/progress";
+import { useSyncedField } from "@/lib/useSyncedField";
 import type { CategoryWithSubtasks } from "@/lib/types";
 import {
   addSubtaskAction,
@@ -13,38 +14,50 @@ import {
   updateCategoryNameAction,
 } from "@/app/projects/[projectId]/actions";
 
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : "操作失敗,請重新整理再試一次";
+}
+
 export function CategoryCard({ category }: { category: CategoryWithSubtasks }) {
   const [, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
   const addSubtaskFormRef = useRef<HTMLFormElement>(null);
-  const [name, setName] = useState(category.name);
-  const [driName, setDriName] = useState(category.dri_name ?? "");
-  const [driUrl, setDriUrl] = useState(category.dri_url ?? "");
+  const nameField = useSyncedField(category.name);
+  const driNameField = useSyncedField(category.dri_name ?? "");
+  const driUrlField = useSyncedField(category.dri_url ?? "");
 
   const progress = categoryProgress(category);
 
   function commitName() {
-    const trimmed = name.trim();
+    const trimmed = nameField.value.trim();
     if (!trimmed || trimmed === category.name) {
-      setName(category.name);
+      nameField.setValue(category.name);
       return;
     }
     startTransition(() => {
-      updateCategoryNameAction(category.id, trimmed);
+      updateCategoryNameAction(category.id, trimmed).catch((err) => setError(errorMessage(err)));
     });
   }
 
   function commitDri() {
-    if (driName === (category.dri_name ?? "") && driUrl === (category.dri_url ?? "")) {
+    if (
+      driNameField.value === (category.dri_name ?? "") &&
+      driUrlField.value === (category.dri_url ?? "")
+    ) {
       return;
     }
     startTransition(() => {
-      updateCategoryDriAction(category.id, driName, driUrl);
+      updateCategoryDriAction(category.id, driNameField.value, driUrlField.value).catch((err) =>
+        setError(errorMessage(err))
+      );
     });
   }
 
   function toggleDone() {
     startTransition(() => {
-      toggleCategoryDoneAction(category.id, !category.done);
+      toggleCategoryDoneAction(category.id, !category.done).catch((err) =>
+        setError(errorMessage(err))
+      );
     });
   }
 
@@ -55,7 +68,7 @@ export function CategoryCard({ category }: { category: CategoryWithSubtasks }) {
       return;
     }
     startTransition(() => {
-      deleteCategoryAction(category.id);
+      deleteCategoryAction(category.id).catch((err) => setError(errorMessage(err)));
     });
   }
 
@@ -71,9 +84,13 @@ export function CategoryCard({ category }: { category: CategoryWithSubtasks }) {
             aria-label="標記大類別完成"
           />
           <input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            onBlur={commitName}
+            value={nameField.value}
+            onChange={(e) => nameField.setValue(e.target.value)}
+            onFocus={nameField.onFocus}
+            onBlur={() => {
+              nameField.onBlur();
+              commitName();
+            }}
             className="w-full bg-transparent text-base font-semibold outline-none focus:underline decoration-accent"
           />
         </div>
@@ -88,16 +105,24 @@ export function CategoryCard({ category }: { category: CategoryWithSubtasks }) {
       <div className="flex flex-wrap items-center gap-2 text-sm">
         <input
           placeholder="負責人姓名"
-          value={driName}
-          onChange={(e) => setDriName(e.target.value)}
-          onBlur={commitDri}
+          value={driNameField.value}
+          onChange={(e) => driNameField.setValue(e.target.value)}
+          onFocus={driNameField.onFocus}
+          onBlur={() => {
+            driNameField.onBlur();
+            commitDri();
+          }}
           className="w-28 rounded border border-border bg-bg px-2 py-1 outline-none focus:border-accent"
         />
         <input
           placeholder="貼上 Google Docs / 雲端資料夾連結"
-          value={driUrl}
-          onChange={(e) => setDriUrl(e.target.value)}
-          onBlur={commitDri}
+          value={driUrlField.value}
+          onChange={(e) => driUrlField.setValue(e.target.value)}
+          onFocus={driUrlField.onFocus}
+          onBlur={() => {
+            driUrlField.onBlur();
+            commitDri();
+          }}
           className="min-w-[10rem] flex-1 rounded border border-border bg-bg px-2 py-1 outline-none focus:border-accent"
         />
         {category.dri_url && (
@@ -114,6 +139,8 @@ export function CategoryCard({ category }: { category: CategoryWithSubtasks }) {
 
       <ProgressBar percent={progress} />
 
+      {error && <p className="text-xs text-red-500">{error}</p>}
+
       <div className="space-y-1">
         {category.subtasks.map((subtask) => (
           <SubtaskRow key={subtask.id} subtask={subtask} />
@@ -126,8 +153,12 @@ export function CategoryCard({ category }: { category: CategoryWithSubtasks }) {
       <form
         ref={addSubtaskFormRef}
         action={async (formData: FormData) => {
-          await addSubtaskAction(category.id, formData);
-          addSubtaskFormRef.current?.reset();
+          try {
+            await addSubtaskAction(category.id, formData);
+            addSubtaskFormRef.current?.reset();
+          } catch (err) {
+            setError(errorMessage(err));
+          }
         }}
         className="flex gap-2"
       >

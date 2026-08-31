@@ -1,12 +1,16 @@
 "use client";
 
-import { useRef, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import type { Todo } from "@/lib/types";
 import {
   addTodoAction,
   deleteTodoAction,
   toggleTodoAction,
 } from "@/app/projects/[projectId]/actions";
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : "操作失敗,請重新整理再試一次";
+}
 
 export function TodoList({
   projectId,
@@ -16,6 +20,7 @@ export function TodoList({
   todos: Todo[];
 }) {
   const [, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
 
   return (
@@ -30,7 +35,9 @@ export function TodoList({
               checked={todo.done}
               onChange={() =>
                 startTransition(() => {
-                  toggleTodoAction(todo.id, !todo.done);
+                  toggleTodoAction(todo.id, !todo.done).catch((err) =>
+                    setError(errorMessage(err))
+                  );
                 })
               }
               className="h-3.5 w-3.5 shrink-0 accent-accent"
@@ -41,7 +48,7 @@ export function TodoList({
             <button
               onClick={() =>
                 startTransition(() => {
-                  deleteTodoAction(todo.id);
+                  deleteTodoAction(todo.id).catch((err) => setError(errorMessage(err)));
                 })
               }
               className="shrink-0 text-xs text-muted opacity-0 hover:text-red-500 group-hover:opacity-100"
@@ -54,11 +61,17 @@ export function TodoList({
         {todos.length === 0 && <p className="text-sm text-muted">目前沒有待辦事項</p>}
       </ul>
 
+      {error && <p className="text-xs text-red-500">{error}</p>}
+
       <form
         ref={formRef}
         action={async (formData: FormData) => {
-          await addTodoAction(projectId, formData);
-          formRef.current?.reset();
+          try {
+            await addTodoAction(projectId, formData);
+            formRef.current?.reset();
+          } catch (err) {
+            setError(errorMessage(err));
+          }
         }}
         className="flex gap-2"
       >

@@ -33,13 +33,21 @@ export async function middleware(request: NextRequest) {
 
   const isPublicPath = PUBLIC_PATHS.some((path) => request.nextUrl.pathname.startsWith(path));
 
+  // getUser() 可能剛好在這次請求裡用 refresh token 換到新的 session,新的 cookie 寫在 response 上。
+  // 如果接下來要 redirect,要用這個帶著新 cookie 的 response 建立 redirect,不然新換到的
+  // refresh token 就這樣不見了 —— 之後舊的(已經因為 rotation 失效的)token 會讓使用者被異常登出。
+  function redirectKeepingCookies(url: URL) {
+    const redirectResponse = NextResponse.redirect(url);
+    response.cookies.getAll().forEach((cookie) => redirectResponse.cookies.set(cookie));
+    return redirectResponse;
+  }
+
   if (!user && !isPublicPath) {
-    const loginUrl = new URL("/login", request.url);
-    return NextResponse.redirect(loginUrl);
+    return redirectKeepingCookies(new URL("/login", request.url));
   }
 
   if (user && request.nextUrl.pathname === "/login") {
-    return NextResponse.redirect(new URL("/projects", request.url));
+    return redirectKeepingCookies(new URL("/projects", request.url));
   }
 
   return response;

@@ -24,7 +24,9 @@ export function LoginForm() {
     if (mode === "signin") {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) {
-        setError(error.message);
+        // 統一用同一句話,不要把 Supabase 回傳的「帳號不存在」跟「密碼錯誤」跟
+        // 「信箱還沒驗證」分開顯示 —— 分開顯示等於讓人可以用來探測哪些 email 已經註冊過。
+        setError("登入失敗,請確認 Email 與密碼是否正確。");
         setLoading(false);
         return;
       }
