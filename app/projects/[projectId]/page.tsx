@@ -54,7 +54,7 @@ export default async function ProjectBoardPage({
         <h2 className="text-sm font-semibold text-muted">事項分類</h2>
         <div className="space-y-3">
           {categories.map((category) => (
-            <CategoryCard key={category.id} projectId={project.id} category={category} />
+            <CategoryCard key={category.id} category={category} />
           ))}
           {categories.length === 0 && (
             <p className="text-sm text-muted">還沒有任何大類別,先新增一個吧。</p>

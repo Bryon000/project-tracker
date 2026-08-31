@@ -30,7 +30,7 @@ export function TodoList({
               checked={todo.done}
               onChange={() =>
                 startTransition(() => {
-                  toggleTodoAction(projectId, todo.id, !todo.done);
+                  toggleTodoAction(todo.id, !todo.done);
                 })
               }
               className="h-3.5 w-3.5 shrink-0 accent-accent"
@@ -41,7 +41,7 @@ export function TodoList({
             <button
               onClick={() =>
                 startTransition(() => {
-                  deleteTodoAction(projectId, todo.id);
+                  deleteTodoAction(todo.id);
                 })
               }
               className="shrink-0 text-xs text-muted opacity-0 hover:text-red-500 group-hover:opacity-100"

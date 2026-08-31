@@ -4,109 +4,114 @@ import { revalidatePath } from "next/cache";
 import * as queries from "@/lib/queries";
 import { requireUser } from "@/lib/auth";
 
-/** 確認目前登入的人是這個專案的成員,不是就直接擋掉。每個會改資料的 action 開頭都要呼叫。 */
-async function requireProjectMember(projectId: string) {
+// 這幾個 require*Access 都是從資料庫查出「這個 id 實際屬於哪個專案」,
+// 再檢查目前使用者是不是那個專案的成員 —— 不能只信任前端傳來的 projectId,
+// 不然使用者可以拿自己有權限的 projectId,搭配別人專案裡的 id 來竄改別人的資料。
+
+async function requireProjectAccess(projectId: string) {
   const user = await requireUser();
   const isMember = await queries.isProjectMember(projectId, user.id);
   if (!isMember) throw new Error("你沒有這個專案的存取權限");
   return user;
 }
 
+async function requireCategoryAccess(categoryId: string) {
+  const user = await requireUser();
+  const projectId = await queries.getCategoryProjectId(categoryId);
+  if (!projectId || !(await queries.isProjectMember(projectId, user.id))) {
+    throw new Error("你沒有這個類別的存取權限");
+  }
+  return projectId;
+}
+
+async function requireSubtaskAccess(subtaskId: string) {
+  const user = await requireUser();
+  const projectId = await queries.getSubtaskProjectId(subtaskId);
+  if (!projectId || !(await queries.isProjectMember(projectId, user.id))) {
+    throw new Error("你沒有這個小項目的存取權限");
+  }
+  return projectId;
+}
+
+async function requireTodoAccess(todoId: string) {
+  const user = await requireUser();
+  const projectId = await queries.getTodoProjectId(todoId);
+  if (!projectId || !(await queries.isProjectMember(projectId, user.id))) {
+    throw new Error("你沒有這個待辦事項的存取權限");
+  }
+  return projectId;
+}
+
 // ---------- Categories ----------
 
 export async function addCategoryAction(projectId: string, formData: FormData) {
-  await requireProjectMember(projectId);
+  await requireProjectAccess(projectId);
   const name = String(formData.get("name") ?? "").trim();
   if (!name) return;
   await queries.addCategory(projectId, name);
   revalidatePath(`/projects/${projectId}`);
 }
 
-export async function updateCategoryNameAction(
-  projectId: string,
-  categoryId: string,
-  name: string
-) {
-  await requireProjectMember(projectId);
+export async function updateCategoryNameAction(categoryId: string, name: string) {
+  const projectId = await requireCategoryAccess(categoryId);
   if (!name.trim()) return;
   await queries.updateCategoryName(categoryId, name.trim());
   revalidatePath(`/projects/${projectId}`);
 }
 
 export async function updateCategoryDriAction(
-  projectId: string,
   categoryId: string,
   driName: string,
   driUrl: string
 ) {
-  await requireProjectMember(projectId);
+  const projectId = await requireCategoryAccess(categoryId);
   await queries.updateCategoryDri(categoryId, driName.trim(), driUrl.trim());
   revalidatePath(`/projects/${projectId}`);
 }
 
-export async function toggleCategoryDoneAction(
-  projectId: string,
-  categoryId: string,
-  done: boolean
-) {
-  await requireProjectMember(projectId);
+export async function toggleCategoryDoneAction(categoryId: string, done: boolean) {
+  const projectId = await requireCategoryAccess(categoryId);
   await queries.toggleCategoryDone(categoryId, done);
   revalidatePath(`/projects/${projectId}`);
 }
 
-export async function deleteCategoryAction(projectId: string, categoryId: string) {
-  await requireProjectMember(projectId);
+export async function deleteCategoryAction(categoryId: string) {
+  const projectId = await requireCategoryAccess(categoryId);
   await queries.deleteCategory(categoryId);
   revalidatePath(`/projects/${projectId}`);
 }
 
 // ---------- Subtasks ----------
 
-export async function addSubtaskAction(
-  projectId: string,
-  categoryId: string,
-  formData: FormData
-) {
-  await requireProjectMember(projectId);
+export async function addSubtaskAction(categoryId: string, formData: FormData) {
+  const projectId = await requireCategoryAccess(categoryId);
   const name = String(formData.get("name") ?? "").trim();
   if (!name) return;
   await queries.addSubtask(categoryId, name);
   revalidatePath(`/projects/${projectId}`);
 }
 
-export async function updateSubtaskNameAction(
-  projectId: string,
-  subtaskId: string,
-  name: string
-) {
-  await requireProjectMember(projectId);
+export async function updateSubtaskNameAction(subtaskId: string, name: string) {
+  const projectId = await requireSubtaskAccess(subtaskId);
   if (!name.trim()) return;
   await queries.updateSubtaskName(subtaskId, name.trim());
   revalidatePath(`/projects/${projectId}`);
 }
 
-export async function updateSubtaskDeadlineAction(
-  projectId: string,
-  subtaskId: string,
-  deadline: string
-) {
-  await requireProjectMember(projectId);
+export async function updateSubtaskDeadlineAction(subtaskId: string, deadline: string) {
+  const projectId = await requireSubtaskAccess(subtaskId);
   await queries.updateSubtaskDeadline(subtaskId, deadline || null);
   revalidatePath(`/projects/${projectId}`);
 }
 
-export async function toggleSubtaskDoneAction(
-  projectId: string,
-  subtaskId: string,
-  done: boolean
-) {
-  await requireProjectMember(projectId);
+export async function toggleSubtaskDoneAction(subtaskId: string, done: boolean) {
+  const projectId = await requireSubtaskAccess(subtaskId);
   await queries.toggleSubtaskDone(subtaskId, done);
   revalidatePath(`/projects/${projectId}`);
 }
 
-export async function deleteSubtaskAction(projectId: string, subtaskId: string) {
-  await requireProjectMember(projectId);
+export async function deleteSubtaskAction(subtaskId: string) {
+  const projectId = await requireSubtaskAccess(subtaskId);
   await queries.deleteSubtask(subtaskId);
   revalidatePath(`/projects/${projectId}`);
 }
@@ -114,25 +119,21 @@ export async function deleteSubtaskAction(projectId: string, subtaskId: string) 
 // ---------- Todos ----------
 
 export async function addTodoAction(projectId: string, formData: FormData) {
-  await requireProjectMember(projectId);
+  await requireProjectAccess(projectId);
   const text = String(formData.get("text") ?? "").trim();
   if (!text) return;
   await queries.addTodo(projectId, text);
   revalidatePath(`/projects/${projectId}`);
 }
 
-export async function toggleTodoAction(
-  projectId: string,
-  todoId: string,
-  done: boolean
-) {
-  await requireProjectMember(projectId);
+export async function toggleTodoAction(todoId: string, done: boolean) {
+  const projectId = await requireTodoAccess(todoId);
   await queries.toggleTodo(todoId, done);
   revalidatePath(`/projects/${projectId}`);
 }
 
-export async function deleteTodoAction(projectId: string, todoId: string) {
-  await requireProjectMember(projectId);
+export async function deleteTodoAction(todoId: string) {
+  const projectId = await requireTodoAccess(todoId);
   await queries.deleteTodo(todoId);
   revalidatePath(`/projects/${projectId}`);
 }

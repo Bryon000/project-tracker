@@ -10,13 +10,7 @@ import {
   updateSubtaskNameAction,
 } from "@/app/projects/[projectId]/actions";
 
-export function SubtaskRow({
-  projectId,
-  subtask,
-}: {
-  projectId: string;
-  subtask: Subtask;
-}) {
+export function SubtaskRow({ subtask }: { subtask: Subtask }) {
   const [, startTransition] = useTransition();
   const [name, setName] = useState(subtask.name);
 
@@ -27,25 +21,25 @@ export function SubtaskRow({
       return;
     }
     startTransition(() => {
-      updateSubtaskNameAction(projectId, subtask.id, trimmed);
+      updateSubtaskNameAction(subtask.id, trimmed);
     });
   }
 
   function toggleDone() {
     startTransition(() => {
-      toggleSubtaskDoneAction(projectId, subtask.id, !subtask.done);
+      toggleSubtaskDoneAction(subtask.id, !subtask.done);
     });
   }
 
   function changeDeadline(e: React.ChangeEvent<HTMLInputElement>) {
     startTransition(() => {
-      updateSubtaskDeadlineAction(projectId, subtask.id, e.target.value);
+      updateSubtaskDeadlineAction(subtask.id, e.target.value);
     });
   }
 
   function remove() {
     startTransition(() => {
-      deleteSubtaskAction(projectId, subtask.id);
+      deleteSubtaskAction(subtask.id);
     });
   }
 

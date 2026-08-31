@@ -13,13 +13,7 @@ import {
   updateCategoryNameAction,
 } from "@/app/projects/[projectId]/actions";
 
-export function CategoryCard({
-  projectId,
-  category,
-}: {
-  projectId: string;
-  category: CategoryWithSubtasks;
-}) {
+export function CategoryCard({ category }: { category: CategoryWithSubtasks }) {
   const [, startTransition] = useTransition();
   const addSubtaskFormRef = useRef<HTMLFormElement>(null);
   const [name, setName] = useState(category.name);
@@ -35,7 +29,7 @@ export function CategoryCard({
       return;
     }
     startTransition(() => {
-      updateCategoryNameAction(projectId, category.id, trimmed);
+      updateCategoryNameAction(category.id, trimmed);
     });
   }
 
@@ -44,13 +38,13 @@ export function CategoryCard({
       return;
     }
     startTransition(() => {
-      updateCategoryDriAction(projectId, category.id, driName, driUrl);
+      updateCategoryDriAction(category.id, driName, driUrl);
     });
   }
 
   function toggleDone() {
     startTransition(() => {
-      toggleCategoryDoneAction(projectId, category.id, !category.done);
+      toggleCategoryDoneAction(category.id, !category.done);
     });
   }
 
@@ -61,7 +55,7 @@ export function CategoryCard({
       return;
     }
     startTransition(() => {
-      deleteCategoryAction(projectId, category.id);
+      deleteCategoryAction(category.id);
     });
   }
 
@@ -122,7 +116,7 @@ export function CategoryCard({
 
       <div className="space-y-1">
         {category.subtasks.map((subtask) => (
-          <SubtaskRow key={subtask.id} projectId={projectId} subtask={subtask} />
+          <SubtaskRow key={subtask.id} subtask={subtask} />
         ))}
         {category.subtasks.length === 0 && (
           <p className="px-1.5 py-1 text-xs text-muted">還沒有小項目</p>
@@ -132,7 +126,7 @@ export function CategoryCard({
       <form
         ref={addSubtaskFormRef}
         action={async (formData: FormData) => {
-          await addSubtaskAction(projectId, category.id, formData);
+          await addSubtaskAction(category.id, formData);
           addSubtaskFormRef.current?.reset();
         }}
         className="flex gap-2"

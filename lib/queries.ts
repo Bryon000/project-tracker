@@ -79,6 +79,39 @@ export async function isProjectMember(
   return !!data;
 }
 
+// 這三個是給 Server Action 做授權檢查用:不能只信任前端傳來的 projectId,
+// 要從資料庫查出 categoryId/subtaskId/todoId「實際」屬於哪個專案,再檢查權限。
+// 不然使用者可以送一個自己有權限的 projectId,搭配別人專案裡的 categoryId 之類的 id 來竄改別人的資料。
+export async function getCategoryProjectId(categoryId: string): Promise<string | null> {
+  const { data, error } = await supabaseAdmin
+    .from("categories")
+    .select("project_id")
+    .eq("id", categoryId)
+    .maybeSingle();
+  if (error) throw error;
+  return data?.project_id ?? null;
+}
+
+export async function getSubtaskProjectId(subtaskId: string): Promise<string | null> {
+  const { data, error } = await supabaseAdmin
+    .from("subtasks")
+    .select("categories(project_id)")
+    .eq("id", subtaskId)
+    .maybeSingle<{ categories: { project_id: string } | null }>();
+  if (error) throw error;
+  return data?.categories?.project_id ?? null;
+}
+
+export async function getTodoProjectId(todoId: string): Promise<string | null> {
+  const { data, error } = await supabaseAdmin
+    .from("todos")
+    .select("project_id")
+    .eq("id", todoId)
+    .maybeSingle();
+  if (error) throw error;
+  return data?.project_id ?? null;
+}
+
 // ---------- Categories ----------
 
 export async function getCategoriesWithSubtasks(
