@@ -1,6 +1,23 @@
 "use client";
 
 import { useRef, useState, useTransition } from "react";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  arrayMove,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { ProgressBar } from "./ProgressBar";
 import { SubtaskRow } from "./SubtaskRow";
 import { categoryProgress } from "@/lib/progress";
@@ -10,6 +27,7 @@ import type { CategoryWithSubtasks } from "@/lib/types";
 import {
   addSubtaskAction,
   deleteCategoryAction,
+  reorderSubtasksAction,
   toggleCategoryDoneAction,
   updateCategoryDriAction,
   updateCategoryNameAction,
@@ -27,8 +45,23 @@ export function CategoryCard({ category }: { category: CategoryWithSubtasks }) {
   const driNameField = useSyncedField(category.dri_name ?? "");
   const driUrlField = useSyncedField(category.dri_url ?? "");
   const [optimisticDone, setOptimisticDone] = useOptimisticValue(category.done);
+  const [orderedSubtasks, setOrderedSubtasks] = useOptimisticValue(category.subtasks);
 
-  const progress = categoryProgress({ ...category, done: optimisticDone });
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: category.id,
+  });
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  const subtaskSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
+
+  const progress = categoryProgress({ ...category, done: optimisticDone, subtasks: orderedSubtasks });
 
   function commitName() {
     const trimmed = nameField.value.trim();
@@ -77,10 +110,42 @@ export function CategoryCard({ category }: { category: CategoryWithSubtasks }) {
     });
   }
 
+  function handleSubtaskDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const oldIndex = orderedSubtasks.findIndex((s) => s.id === active.id);
+    const newIndex = orderedSubtasks.findIndex((s) => s.id === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
+
+    const next = arrayMove(orderedSubtasks, oldIndex, newIndex);
+    setOrderedSubtasks(next);
+
+    reorderSubtasksAction(
+      category.id,
+      next.map((s) => s.id)
+    ).catch((err) => {
+      setOrderedSubtasks(category.subtasks);
+      setError(errorMessage(err));
+    });
+  }
+
   return (
-    <div className="space-y-3 rounded-lg border border-border bg-surface p-4">
+    <div
+      ref={setNodeRef}
+      style={style}
+      className="space-y-3 rounded-lg border border-border bg-surface p-4"
+    >
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 flex-1 items-start gap-2">
+          <button
+            {...attributes}
+            {...listeners}
+            className="mt-1 shrink-0 cursor-grab touch-none text-muted hover:text-accent active:cursor-grabbing"
+            aria-label="拖曳排序類別"
+          >
+            ⠿
+          </button>
           <input
             type="checkbox"
             checked={optimisticDone}
@@ -146,14 +211,25 @@ export function CategoryCard({ category }: { category: CategoryWithSubtasks }) {
 
       {error && <p className="text-xs text-red-500">{error}</p>}
 
-      <div className="space-y-1">
-        {category.subtasks.map((subtask) => (
-          <SubtaskRow key={subtask.id} subtask={subtask} />
-        ))}
-        {category.subtasks.length === 0 && (
-          <p className="px-1.5 py-1 text-xs text-muted">還沒有小項目</p>
-        )}
-      </div>
+      <DndContext
+        sensors={subtaskSensors}
+        collisionDetection={closestCenter}
+        onDragEnd={handleSubtaskDragEnd}
+      >
+        <SortableContext
+          items={orderedSubtasks.map((s) => s.id)}
+          strategy={verticalListSortingStrategy}
+        >
+          <div className="space-y-1">
+            {orderedSubtasks.map((subtask) => (
+              <SubtaskRow key={subtask.id} subtask={subtask} />
+            ))}
+            {orderedSubtasks.length === 0 && (
+              <p className="px-1.5 py-1 text-xs text-muted">還沒有小項目</p>
+            )}
+          </div>
+        </SortableContext>
+      </DndContext>
 
       <form
         ref={addSubtaskFormRef}

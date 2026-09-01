@@ -207,6 +207,28 @@ export async function deleteCategory(categoryId: string): Promise<void> {
   if (error) throw error;
 }
 
+/**
+ * 拖曳排序後,把整份新順序的 id 清單寫回去(sort_order = 在清單裡的 index)。
+ * update 都用 .eq("project_id", projectId) 多鎖一層,就算 orderedIds 裡混進不屬於
+ * 這個專案的 id,那筆 update 也只會影響 0 筆,不會真的動到別人專案的資料。
+ */
+export async function reorderCategories(
+  projectId: string,
+  orderedIds: string[]
+): Promise<void> {
+  const results = await Promise.all(
+    orderedIds.map((id, index) =>
+      supabaseAdmin
+        .from("categories")
+        .update({ sort_order: index })
+        .eq("id", id)
+        .eq("project_id", projectId)
+    )
+  );
+  const failed = results.find((r) => r.error);
+  if (failed?.error) throw failed.error;
+}
+
 // ---------- Subtasks ----------
 
 export async function addSubtask(
@@ -277,6 +299,24 @@ export async function updateSubtaskNote(
 export async function deleteSubtask(subtaskId: string): Promise<void> {
   const { error } = await supabaseAdmin.from("subtasks").delete().eq("id", subtaskId);
   if (error) throw error;
+}
+
+/** 拖曳排序後,把整份新順序的 id 清單寫回去。同樣多鎖 category_id 這一層,防止跨分類竄改。 */
+export async function reorderSubtasks(
+  categoryId: string,
+  orderedIds: string[]
+): Promise<void> {
+  const results = await Promise.all(
+    orderedIds.map((id, index) =>
+      supabaseAdmin
+        .from("subtasks")
+        .update({ sort_order: index })
+        .eq("id", id)
+        .eq("category_id", categoryId)
+    )
+  );
+  const failed = results.find((r) => r.error);
+  if (failed?.error) throw failed.error;
 }
 
 // ---------- Todos ----------

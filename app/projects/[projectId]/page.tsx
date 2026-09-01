@@ -9,7 +9,7 @@ import {
 import { requireUser } from "@/lib/auth";
 import { overallProgress } from "@/lib/progress";
 import { OverallProgress } from "@/components/OverallProgress";
-import { CategoryCard } from "@/components/CategoryCard";
+import { CategoryList } from "@/components/CategoryList";
 import { AddCategoryForm } from "@/components/AddCategoryForm";
 import { TodoList } from "@/components/TodoList";
 import { ShareDialog } from "@/components/ShareDialog";
@@ -58,14 +58,7 @@ export default async function ProjectBoardPage({
 
       <section className="space-y-3">
         <h2 className="text-sm font-semibold text-muted">事項分類</h2>
-        <div className="space-y-3">
-          {categories.map((category) => (
-            <CategoryCard key={category.id} category={category} />
-          ))}
-          {categories.length === 0 && (
-            <p className="text-sm text-muted">還沒有任何大類別,先新增一個吧。</p>
-          )}
-        </div>
+        <CategoryList projectId={project.id} categories={categories} />
         <AddCategoryForm projectId={project.id} />
       </section>
 

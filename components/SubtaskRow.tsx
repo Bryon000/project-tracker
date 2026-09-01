@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useSortable } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { ReminderBadge } from "./ReminderBadge";
 import { useSyncedField } from "@/lib/useSyncedField";
 import { useOptimisticValue } from "@/lib/useOptimisticValue";
@@ -25,6 +27,17 @@ export function SubtaskRow({ subtask }: { subtask: Subtask }) {
   const noteField = useSyncedField(subtask.note ?? "");
   const [optimisticDone, setOptimisticDone] = useOptimisticValue(subtask.done);
   const [noteOpen, setNoteOpen] = useState(!!subtask.note);
+
+  // 拖曳的 ref/style 掛在最外層(下面那個 <div>),備註展開的文字框跟這一列都在同一個
+  // 外層容器裡,拖曳小項目時備註會一起移動,不會被拆開。
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: subtask.id,
+  });
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
 
   function commitName() {
     const trimmed = nameField.value.trim();
@@ -73,8 +86,16 @@ export function SubtaskRow({ subtask }: { subtask: Subtask }) {
   }
 
   return (
-    <div className="space-y-1">
+    <div ref={setNodeRef} style={style} className="space-y-1">
       <div className="flex items-center gap-2 rounded px-1.5 py-1 text-sm hover:bg-bg">
+        <button
+          {...attributes}
+          {...listeners}
+          className="shrink-0 cursor-grab touch-none text-muted hover:text-accent active:cursor-grabbing"
+          aria-label="拖曳排序小項目"
+        >
+          ⠿
+        </button>
         <input
           type="checkbox"
           checked={optimisticDone}
@@ -131,10 +152,10 @@ export function SubtaskRow({ subtask }: { subtask: Subtask }) {
           }}
           placeholder="備註..."
           rows={2}
-          className="ml-6 w-[calc(100%-1.5rem)] resize-y rounded border border-border bg-bg px-2 py-1 text-xs text-ink outline-none focus:border-accent"
+          className="ml-9 w-[calc(100%-2.25rem)] resize-y rounded border border-border bg-bg px-2 py-1 text-xs text-ink outline-none focus:border-accent"
         />
       )}
-      {error && <p className="pl-6 text-xs text-red-500">{error}</p>}
+      {error && <p className="pl-9 text-xs text-red-500">{error}</p>}
     </div>
   );
 }

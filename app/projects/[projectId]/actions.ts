@@ -91,6 +91,12 @@ export async function deleteCategoryAction(categoryId: string) {
   revalidatePath(`/projects/${projectId}`);
 }
 
+export async function reorderCategoriesAction(projectId: string, orderedIds: string[]) {
+  await requireProjectAccess(projectId);
+  await queries.reorderCategories(projectId, orderedIds);
+  revalidatePath(`/projects/${projectId}`);
+}
+
 // ---------- Subtasks ----------
 
 export async function addSubtaskAction(categoryId: string, formData: FormData) {
@@ -129,6 +135,12 @@ export async function updateSubtaskNoteAction(subtaskId: string, note: string) {
 export async function deleteSubtaskAction(subtaskId: string) {
   const projectId = await requireSubtaskAccess(subtaskId);
   await queries.deleteSubtask(subtaskId);
+  revalidatePath(`/projects/${projectId}`);
+}
+
+export async function reorderSubtasksAction(categoryId: string, orderedIds: string[]) {
+  const projectId = await requireCategoryAccess(categoryId);
+  await queries.reorderSubtasks(categoryId, orderedIds);
   revalidatePath(`/projects/${projectId}`);
 }
 
