@@ -3,8 +3,8 @@ import { notFound } from "next/navigation";
 import {
   getCategoriesWithSubtasks,
   getProject,
+  getProjectMemberRole,
   getTodos,
-  isProjectMember,
 } from "@/lib/queries";
 import { requireUser } from "@/lib/auth";
 import { overallProgress } from "@/lib/progress";
@@ -13,6 +13,7 @@ import { CategoryCard } from "@/components/CategoryCard";
 import { AddCategoryForm } from "@/components/AddCategoryForm";
 import { TodoList } from "@/components/TodoList";
 import { ShareDialog } from "@/components/ShareDialog";
+import { DeleteProjectButton } from "@/components/DeleteProjectButton";
 
 export const dynamic = "force-dynamic";
 
@@ -26,8 +27,8 @@ export default async function ProjectBoardPage({
   if (!project) notFound();
 
   // 不是這個專案的成員就當作不存在,不能靠猜網址看到別人的專案。
-  const isMember = await isProjectMember(params.projectId, user.id);
-  if (!isMember) notFound();
+  const role = await getProjectMemberRole(params.projectId, user.id);
+  if (!role) notFound();
 
   const [categories, todos] = await Promise.all([
     getCategoriesWithSubtasks(params.projectId),
@@ -45,7 +46,12 @@ export default async function ProjectBoardPage({
           </Link>
           <h1 className="mt-1 text-xl font-semibold">{project.name}</h1>
         </div>
-        <ShareDialog />
+        <div className="flex items-center gap-2">
+          <ShareDialog />
+          {role === "owner" && (
+            <DeleteProjectButton projectId={project.id} projectName={project.name} />
+          )}
+        </div>
       </div>
 
       <OverallProgress percent={progress} />

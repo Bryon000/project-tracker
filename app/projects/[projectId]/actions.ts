@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import * as queries from "@/lib/queries";
 import { requireUser } from "@/lib/auth";
 
@@ -12,6 +13,15 @@ async function requireProjectAccess(projectId: string) {
   const user = await requireUser();
   const isMember = await queries.isProjectMember(projectId, user.id);
   if (!isMember) throw new Error("你沒有這個專案的存取權限");
+  return user;
+}
+
+// 刪除整個專案影響範圍最大(連帶砍掉所有類別/小項目/待辦事項),只有 owner 能做,
+// 不是任何成員都行 —— 之後共享功能上線,被邀請的 editor/viewer 不該有這個權限。
+async function requireProjectOwner(projectId: string) {
+  const user = await requireUser();
+  const role = await queries.getProjectMemberRole(projectId, user.id);
+  if (role !== "owner") throw new Error("只有專案擁有者可以刪除專案");
   return user;
 }
 
@@ -136,4 +146,13 @@ export async function deleteTodoAction(todoId: string) {
   const projectId = await requireTodoAccess(todoId);
   await queries.deleteTodo(todoId);
   revalidatePath(`/projects/${projectId}`);
+}
+
+// ---------- Project ----------
+
+export async function deleteProjectAction(projectId: string) {
+  await requireProjectOwner(projectId);
+  await queries.deleteProject(projectId);
+  revalidatePath("/projects");
+  redirect("/projects");
 }

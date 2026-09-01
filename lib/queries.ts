@@ -64,6 +64,11 @@ export async function createProject(
   return project;
 }
 
+export async function deleteProject(projectId: string): Promise<void> {
+  const { error } = await supabaseAdmin.from("projects").delete().eq("id", projectId);
+  if (error) throw error;
+}
+
 /** 這個使用者是不是這個專案的成員(owner/editor/viewer 都算)。給 Server Action 做授權檢查用。 */
 export async function isProjectMember(
   projectId: string,
@@ -77,6 +82,21 @@ export async function isProjectMember(
     .maybeSingle();
   if (error) throw error;
   return !!data;
+}
+
+/** 這個使用者在這個專案裡的角色(owner/editor/viewer),不是成員就是 null。刪除專案這類高風險操作只給 owner 用。 */
+export async function getProjectMemberRole(
+  projectId: string,
+  userId: string
+): Promise<string | null> {
+  const { data, error } = await supabaseAdmin
+    .from("project_members")
+    .select("role")
+    .eq("project_id", projectId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error) throw error;
+  return data?.role ?? null;
 }
 
 // 這三個是給 Server Action 做授權檢查用:不能只信任前端傳來的 projectId,
