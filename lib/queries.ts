@@ -263,6 +263,17 @@ export async function toggleSubtaskDone(
   if (error) throw error;
 }
 
+export async function updateSubtaskNote(
+  subtaskId: string,
+  note: string | null
+): Promise<void> {
+  const { error } = await supabaseAdmin
+    .from("subtasks")
+    .update({ note })
+    .eq("id", subtaskId);
+  if (error) throw error;
+}
+
 export async function deleteSubtask(subtaskId: string): Promise<void> {
   const { error } = await supabaseAdmin.from("subtasks").delete().eq("id", subtaskId);
   if (error) throw error;

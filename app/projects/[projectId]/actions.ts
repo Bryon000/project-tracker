@@ -120,6 +120,12 @@ export async function toggleSubtaskDoneAction(subtaskId: string, done: boolean) 
   revalidatePath(`/projects/${projectId}`);
 }
 
+export async function updateSubtaskNoteAction(subtaskId: string, note: string) {
+  const projectId = await requireSubtaskAccess(subtaskId);
+  await queries.updateSubtaskNote(subtaskId, note.trim() || null);
+  revalidatePath(`/projects/${projectId}`);
+}
+
 export async function deleteSubtaskAction(subtaskId: string) {
   const projectId = await requireSubtaskAccess(subtaskId);
   await queries.deleteSubtask(subtaskId);

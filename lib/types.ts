@@ -21,6 +21,7 @@ export interface Subtask {
   deadline: string | null;
   done: boolean;
   sort_order: number;
+  note: string | null;
 }
 
 export interface Category {

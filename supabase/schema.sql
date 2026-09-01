@@ -32,7 +32,8 @@ create table subtasks (
   name text not null,
   deadline date,
   done boolean not null default false,
-  sort_order int not null default 0
+  sort_order int not null default 0,
+  note text
 );
 
 create table todos (

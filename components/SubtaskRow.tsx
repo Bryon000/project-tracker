@@ -10,6 +10,7 @@ import {
   toggleSubtaskDoneAction,
   updateSubtaskDeadlineAction,
   updateSubtaskNameAction,
+  updateSubtaskNoteAction,
 } from "@/app/projects/[projectId]/actions";
 
 function errorMessage(err: unknown): string {
@@ -21,7 +22,9 @@ export function SubtaskRow({ subtask }: { subtask: Subtask }) {
   const [error, setError] = useState<string | null>(null);
   const nameField = useSyncedField(subtask.name);
   const deadlineField = useSyncedField(subtask.deadline ?? "");
+  const noteField = useSyncedField(subtask.note ?? "");
   const [optimisticDone, setOptimisticDone] = useOptimisticValue(subtask.done);
+  const [noteOpen, setNoteOpen] = useState(!!subtask.note);
 
   function commitName() {
     const trimmed = nameField.value.trim();
@@ -61,6 +64,14 @@ export function SubtaskRow({ subtask }: { subtask: Subtask }) {
     });
   }
 
+  function commitNote() {
+    const trimmed = noteField.value.trim();
+    if (trimmed === (subtask.note ?? "")) return;
+    startTransition(() => {
+      updateSubtaskNoteAction(subtask.id, trimmed).catch((err) => setError(errorMessage(err)));
+    });
+  }
+
   return (
     <div className="space-y-1">
       <div className="flex items-center gap-2 rounded px-1.5 py-1 text-sm hover:bg-bg">
@@ -93,6 +104,15 @@ export function SubtaskRow({ subtask }: { subtask: Subtask }) {
         />
         <ReminderBadge deadline={subtask.deadline} />
         <button
+          onClick={() => setNoteOpen((v) => !v)}
+          className={`shrink-0 text-xs hover:text-accent ${
+            subtask.note ? "text-accent" : "text-muted"
+          }`}
+          aria-label="備註"
+        >
+          備註
+        </button>
+        <button
           onClick={remove}
           className="shrink-0 text-xs text-muted hover:text-red-500"
           aria-label="刪除小項目"
@@ -100,6 +120,20 @@ export function SubtaskRow({ subtask }: { subtask: Subtask }) {
           ✕
         </button>
       </div>
+      {noteOpen && (
+        <textarea
+          value={noteField.value}
+          onChange={(e) => noteField.setValue(e.target.value)}
+          onFocus={noteField.onFocus}
+          onBlur={() => {
+            noteField.onBlur();
+            commitNote();
+          }}
+          placeholder="備註..."
+          rows={2}
+          className="ml-6 w-[calc(100%-1.5rem)] resize-y rounded border border-border bg-bg px-2 py-1 text-xs text-ink outline-none focus:border-accent"
+        />
+      )}
       {error && <p className="pl-6 text-xs text-red-500">{error}</p>}
     </div>
   );
