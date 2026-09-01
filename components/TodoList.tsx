@@ -1,12 +1,9 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useRef, useState } from "react";
 import type { Todo } from "@/lib/types";
-import {
-  addTodoAction,
-  deleteTodoAction,
-  toggleTodoAction,
-} from "@/app/projects/[projectId]/actions";
+import { addTodoAction } from "@/app/projects/[projectId]/actions";
+import { TodoItem } from "./TodoItem";
 
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : "操作失敗,請重新整理再試一次";
@@ -19,7 +16,6 @@ export function TodoList({
   projectId: string;
   todos: Todo[];
 }) {
-  const [, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
 
@@ -29,34 +25,7 @@ export function TodoList({
 
       <ul className="space-y-1.5">
         {todos.map((todo) => (
-          <li key={todo.id} className="group flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={todo.done}
-              onChange={() =>
-                startTransition(() => {
-                  toggleTodoAction(todo.id, !todo.done).catch((err) =>
-                    setError(errorMessage(err))
-                  );
-                })
-              }
-              className="h-3.5 w-3.5 shrink-0 accent-accent"
-            />
-            <span className={`flex-1 ${todo.done ? "text-muted line-through" : ""}`}>
-              {todo.text}
-            </span>
-            <button
-              onClick={() =>
-                startTransition(() => {
-                  deleteTodoAction(todo.id).catch((err) => setError(errorMessage(err)));
-                })
-              }
-              className="shrink-0 text-xs text-muted opacity-0 hover:text-red-500 group-hover:opacity-100"
-              aria-label="刪除待辦事項"
-            >
-              ✕
-            </button>
-          </li>
+          <TodoItem key={todo.id} todo={todo} onError={setError} />
         ))}
         {todos.length === 0 && <p className="text-sm text-muted">目前沒有待辦事項</p>}
       </ul>

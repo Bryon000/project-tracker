@@ -5,6 +5,7 @@ import { ProgressBar } from "./ProgressBar";
 import { SubtaskRow } from "./SubtaskRow";
 import { categoryProgress } from "@/lib/progress";
 import { useSyncedField } from "@/lib/useSyncedField";
+import { useOptimisticValue } from "@/lib/useOptimisticValue";
 import type { CategoryWithSubtasks } from "@/lib/types";
 import {
   addSubtaskAction,
@@ -25,8 +26,9 @@ export function CategoryCard({ category }: { category: CategoryWithSubtasks }) {
   const nameField = useSyncedField(category.name);
   const driNameField = useSyncedField(category.dri_name ?? "");
   const driUrlField = useSyncedField(category.dri_url ?? "");
+  const [optimisticDone, setOptimisticDone] = useOptimisticValue(category.done);
 
-  const progress = categoryProgress(category);
+  const progress = categoryProgress({ ...category, done: optimisticDone });
 
   function commitName() {
     const trimmed = nameField.value.trim();
@@ -54,10 +56,13 @@ export function CategoryCard({ category }: { category: CategoryWithSubtasks }) {
   }
 
   function toggleDone() {
+    const next = !optimisticDone;
+    setOptimisticDone(next);
     startTransition(() => {
-      toggleCategoryDoneAction(category.id, !category.done).catch((err) =>
-        setError(errorMessage(err))
-      );
+      toggleCategoryDoneAction(category.id, next).catch((err) => {
+        setOptimisticDone(category.done);
+        setError(errorMessage(err));
+      });
     });
   }
 
@@ -78,7 +83,7 @@ export function CategoryCard({ category }: { category: CategoryWithSubtasks }) {
         <div className="flex min-w-0 flex-1 items-start gap-2">
           <input
             type="checkbox"
-            checked={category.done}
+            checked={optimisticDone}
             onChange={toggleDone}
             className="mt-1.5 h-4 w-4 shrink-0 accent-accent"
             aria-label="標記大類別完成"

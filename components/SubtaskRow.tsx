@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { ReminderBadge } from "./ReminderBadge";
 import { useSyncedField } from "@/lib/useSyncedField";
+import { useOptimisticValue } from "@/lib/useOptimisticValue";
 import type { Subtask } from "@/lib/types";
 import {
   deleteSubtaskAction,
@@ -20,6 +21,7 @@ export function SubtaskRow({ subtask }: { subtask: Subtask }) {
   const [error, setError] = useState<string | null>(null);
   const nameField = useSyncedField(subtask.name);
   const deadlineField = useSyncedField(subtask.deadline ?? "");
+  const [optimisticDone, setOptimisticDone] = useOptimisticValue(subtask.done);
 
   function commitName() {
     const trimmed = nameField.value.trim();
@@ -33,10 +35,13 @@ export function SubtaskRow({ subtask }: { subtask: Subtask }) {
   }
 
   function toggleDone() {
+    const next = !optimisticDone;
+    setOptimisticDone(next);
     startTransition(() => {
-      toggleSubtaskDoneAction(subtask.id, !subtask.done).catch((err) =>
-        setError(errorMessage(err))
-      );
+      toggleSubtaskDoneAction(subtask.id, next).catch((err) => {
+        setOptimisticDone(subtask.done);
+        setError(errorMessage(err));
+      });
     });
   }
 
@@ -61,7 +66,7 @@ export function SubtaskRow({ subtask }: { subtask: Subtask }) {
       <div className="flex items-center gap-2 rounded px-1.5 py-1 text-sm hover:bg-bg">
         <input
           type="checkbox"
-          checked={subtask.done}
+          checked={optimisticDone}
           onChange={toggleDone}
           className="h-3.5 w-3.5 shrink-0 accent-accent"
           aria-label="標記小項目完成"
@@ -75,7 +80,7 @@ export function SubtaskRow({ subtask }: { subtask: Subtask }) {
             commitName();
           }}
           className={`min-w-0 flex-1 bg-transparent outline-none focus:underline decoration-accent ${
-            subtask.done ? "text-muted line-through" : ""
+            optimisticDone ? "text-muted line-through" : ""
           }`}
         />
         <input
