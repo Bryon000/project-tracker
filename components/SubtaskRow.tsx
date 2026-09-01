@@ -19,6 +19,7 @@ export function SubtaskRow({ subtask }: { subtask: Subtask }) {
   const [, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const nameField = useSyncedField(subtask.name);
+  const deadlineField = useSyncedField(subtask.deadline ?? "");
 
   function commitName() {
     const trimmed = nameField.value.trim();
@@ -41,6 +42,7 @@ export function SubtaskRow({ subtask }: { subtask: Subtask }) {
 
   function changeDeadline(e: React.ChangeEvent<HTMLInputElement>) {
     const deadline = e.target.value;
+    deadlineField.setValue(deadline);
     startTransition(() => {
       updateSubtaskDeadlineAction(subtask.id, deadline).catch((err) =>
         setError(errorMessage(err))
@@ -78,8 +80,10 @@ export function SubtaskRow({ subtask }: { subtask: Subtask }) {
         />
         <input
           type="date"
-          value={subtask.deadline ?? ""}
+          value={deadlineField.value}
           onChange={changeDeadline}
+          onFocus={deadlineField.onFocus}
+          onBlur={deadlineField.onBlur}
           className="shrink-0 rounded border border-border bg-bg px-1.5 py-0.5 text-xs text-muted outline-none focus:border-accent"
         />
         <ReminderBadge deadline={subtask.deadline} />
