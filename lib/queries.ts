@@ -476,11 +476,19 @@ export async function getSubtasksNeedingReminder(): Promise<ReminderSubtask[]> {
  * 靠 reminder_sends.sent_date 的 unique 限制當鎖:同一天第二次呼叫一定會 insert 失敗
  * (code 23505 = unique_violation),回傳 false,呼叫端就知道今天已經發過、不要再發一次。
  */
-export async function tryClaimReminderSlot(sentDate: string): Promise<boolean> {
+export async function hasReminderBeenSentToday(sentDate: string): Promise<boolean> {
+  const { data, error } = await supabaseAdmin
+    .from("reminder_sends")
+    .select("id")
+    .eq("sent_date", sentDate)
+    .maybeSingle();
+  if (error) throw error;
+  return !!data;
+}
+
+/** 只有在真的成功發送之後才呼叫這個 —— 先佔位再發送的話,只要那次發送失敗
+ * (不管是暫時性問題還是設定錯誤),當天就再也不會重試,這比重複發送更糟。 */
+export async function markReminderSent(sentDate: string): Promise<void> {
   const { error } = await supabaseAdmin.from("reminder_sends").insert({ sent_date: sentDate });
-  if (error) {
-    if (error.code === "23505") return false;
-    throw error;
-  }
-  return true;
+  if (error && error.code !== "23505") throw error;
 }

@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import {
   getSubtasksNeedingReminder,
-  tryClaimReminderSlot,
+  hasReminderBeenSentToday,
+  markReminderSent,
   type ReminderSubtask,
 } from "@/lib/queries";
 import { deadlineStatus, todayInTeamTimezone } from "@/lib/progress";
@@ -69,11 +70,14 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
+  const today = todayInTeamTimezone();
+
   try {
-    // 先搶今天的發送名額,搶不到代表今天已經發過了(不管是 Vercel Cron 自己重試,
-    // 還是 CRON_SECRET 萬一外洩被重複觸發),直接跳過,一天最多只會真的發一次。
-    const claimed = await tryClaimReminderSlot(todayInTeamTimezone());
-    if (!claimed) {
+    // 今天已經發過了(不管是 Vercel Cron 自己重試,還是 CRON_SECRET 萬一外洩被重複觸發),
+    // 直接跳過,一天最多只會真的發一次。注意:這個記錄要等發送真的成功之後才會寫入
+    // (看下面 markReminderSent 那行)—— 不能先佔位再發送,不然只要中途失敗一次
+    // (不管什麼原因),當天就再也不會重試,那比重複發送更糟。
+    if (await hasReminderBeenSentToday(today)) {
       return NextResponse.json({ sent: false, reason: "今天已經執行過了" });
     }
 
@@ -95,6 +99,7 @@ export async function GET(request: Request) {
     }
 
     await sendLineMessage(formatMessage(byProject));
+    await markReminderSent(today);
 
     let overdueCount = 0;
     let soonCount = 0;
