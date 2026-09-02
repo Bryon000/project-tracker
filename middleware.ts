@@ -1,7 +1,16 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-const PUBLIC_PATHS = ["/login", "/auth/callback"];
+// ⚠️ "/api/" 這個前綴會讓底下所有路由完全跳過這裡的登入檢查 —— 原因是 Vercel Cron、
+// LINE 的 webhook 呼叫都不會帶使用者的 session cookie,被這層擋下來變成導去 /login 的話,
+// cron 跟 webhook 就完全失效了。
+//
+// 代價是:middleware 以後不會再幫任何 app/api/ 底下的新路由擋未登入的請求。
+// 之後不管誰在 app/api/ 加新的路由,都必須自己在該路由裡實作授權檢查
+// (參考 app/api/cron/reminders 的 CRON_SECRET 比對、app/api/line/webhook 的
+// x-line-signature 驗證),不能假設這裡的登入保護還在——忘記做的話,那支路由就是
+// 一個完全公開、任何人都能打的端點。
+const PUBLIC_PATHS = ["/login", "/auth/callback", "/api/"];
 
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({ request: { headers: request.headers } });

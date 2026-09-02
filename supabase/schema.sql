@@ -59,5 +59,14 @@ create table staff (
 
 alter table subtasks add column assignee_staff_id uuid references staff(id) on delete set null;
 
+-- LINE 每日提醒的防重複發送鎖:cron 路由送出提醒前先寫一筆今天的日期進來,
+-- 靠 sent_date 的 unique 限制擋掉「同一天被觸發兩次」(不管是 CRON_SECRET 外洩被亂打,
+-- 還是 Vercel Cron 本身偶發重試),不會真的送出兩則重複的提醒。
+create table reminder_sends (
+  id uuid primary key default uuid_generate_v4(),
+  sent_date date not null unique,
+  created_at timestamptz not null default now()
+);
+
 -- Phase 1 先不開 RLS,方便用假使用者測試
 -- Phase 2 接上登入後,記得在每張表加上對應的 RLS policy

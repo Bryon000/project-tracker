@@ -25,7 +25,7 @@ export function overallProgress(categories: CategoryWithSubtasks[]): number {
 // 導致 SSR 算好的徽章文字跟瀏覽器 hydrate 後重算的對不起來(hydration mismatch)。
 const TEAM_TZ_OFFSET_MS = 8 * 60 * 60 * 1000;
 
-function todayInTeamTimezone(): string {
+export function todayInTeamTimezone(): string {
   const shifted = new Date(Date.now() + TEAM_TZ_OFFSET_MS);
   return shifted.toISOString().slice(0, 10);
 }

@@ -424,3 +424,63 @@ export async function updateSubtaskAssignee(
     .eq("id", subtaskId);
   if (error) throw error;
 }
+
+// ---------- Reminders ----------
+
+export interface ReminderSubtask {
+  id: string;
+  name: string;
+  deadline: string;
+  projectId: string;
+  projectName: string;
+  assigneeName: string | null;
+}
+
+interface ReminderRow {
+  id: string;
+  name: string;
+  deadline: string;
+  categories: { name: string; projects: { id: string; name: string } | null } | null;
+  staff: { name: string } | null;
+}
+
+/**
+ * 還沒完成、有設 deadline 的小項目,跨這個部署裡的所有專案(不分 owner)。
+ * 目前這個 app 是單一團隊在用,所以提醒訊息全部丟進同一個 LINE 群組;
+ * 之後如果真的有多個不相干的 owner 各自用這個部署,這裡要改成依 owner 分開發送。
+ *
+ * 這裡一定要撈 project id(不能只用 project 名稱分組)——名稱沒有唯一性限制,
+ * 兩個不同專案剛好同名的話,只用名稱分組會把它們的任務錯誤地混成一組。
+ */
+export async function getSubtasksNeedingReminder(): Promise<ReminderSubtask[]> {
+  const { data, error } = await supabaseAdmin
+    .from("subtasks")
+    .select("id, name, deadline, categories(name, projects(id, name)), staff(name)")
+    .eq("done", false)
+    .not("deadline", "is", null);
+  if (error) throw error;
+
+  const rows = (data ?? []) as unknown as ReminderRow[];
+  return rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    deadline: row.deadline,
+    projectId: row.categories?.projects?.id ?? "",
+    projectName: row.categories?.projects?.name ?? "未命名專案",
+    assigneeName: row.staff?.name ?? null,
+  }));
+}
+
+/**
+ * 幫今天這個日期「搶一個發送名額」,搶到才可以真的發 LINE 訊息。
+ * 靠 reminder_sends.sent_date 的 unique 限制當鎖:同一天第二次呼叫一定會 insert 失敗
+ * (code 23505 = unique_violation),回傳 false,呼叫端就知道今天已經發過、不要再發一次。
+ */
+export async function tryClaimReminderSlot(sentDate: string): Promise<boolean> {
+  const { error } = await supabaseAdmin.from("reminder_sends").insert({ sent_date: sentDate });
+  if (error) {
+    if (error.code === "23505") return false;
+    throw error;
+  }
+  return true;
+}
