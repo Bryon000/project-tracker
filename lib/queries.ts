@@ -4,6 +4,7 @@ import type {
   Category,
   CategoryWithSubtasks,
   Project,
+  Staff,
   Subtask,
   Todo,
 } from "./types";
@@ -67,6 +68,17 @@ export async function createProject(
 export async function deleteProject(projectId: string): Promise<void> {
   const { error } = await supabaseAdmin.from("projects").delete().eq("id", projectId);
   if (error) throw error;
+}
+
+/** 給員工花名冊授權檢查用:這個專案的花名冊「主人」是誰(= 建立這個專案的人)。 */
+export async function getProjectOwnerId(projectId: string): Promise<string | null> {
+  const { data, error } = await supabaseAdmin
+    .from("projects")
+    .select("created_by")
+    .eq("id", projectId)
+    .maybeSingle();
+  if (error) throw error;
+  return data?.created_by ?? null;
 }
 
 /** 這個使用者是不是這個專案的成員(owner/editor/viewer 都算)。給 Server Action 做授權檢查用。 */
@@ -348,5 +360,67 @@ export async function toggleTodo(todoId: string, done: boolean): Promise<void> {
 
 export async function deleteTodo(todoId: string): Promise<void> {
   const { error } = await supabaseAdmin.from("todos").delete().eq("id", todoId);
+  if (error) throw error;
+}
+
+// ---------- Staff ----------
+
+/** 屬於這個 owner(專案擁有者)的整份員工花名冊,同一個 owner 名下每個專案都共用這份。 */
+export async function getStaffForOwner(ownerId: string): Promise<Staff[]> {
+  const { data, error } = await supabaseAdmin
+    .from("staff")
+    .select("*")
+    .eq("owner_id", ownerId)
+    .order("sort_order", { ascending: true });
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function addStaff(
+  ownerId: string,
+  name: string,
+  email: string | null
+): Promise<Staff> {
+  const { data: last } = await supabaseAdmin
+    .from("staff")
+    .select("sort_order")
+    .eq("owner_id", ownerId)
+    .order("sort_order", { ascending: false })
+    .limit(1);
+  const nextOrder = last && last.length > 0 ? last[0].sort_order + 1 : 0;
+
+  const { data, error } = await supabaseAdmin
+    .from("staff")
+    .insert({ owner_id: ownerId, name, email, sort_order: nextOrder })
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function deleteStaff(staffId: string): Promise<void> {
+  const { error } = await supabaseAdmin.from("staff").delete().eq("id", staffId);
+  if (error) throw error;
+}
+
+/** 給 Server Action 授權檢查用:這個 staffId 實際屬於哪個 owner 的花名冊。 */
+export async function getStaffOwnerId(staffId: string): Promise<string | null> {
+  const { data, error } = await supabaseAdmin
+    .from("staff")
+    .select("owner_id")
+    .eq("id", staffId)
+    .maybeSingle();
+  if (error) throw error;
+  return data?.owner_id ?? null;
+}
+
+export async function updateSubtaskAssignee(
+  subtaskId: string,
+  staffId: string | null
+): Promise<void> {
+  const { error } = await supabaseAdmin
+    .from("subtasks")
+    .update({ assignee_staff_id: staffId })
+    .eq("id", subtaskId);
   if (error) throw error;
 }

@@ -22,6 +22,17 @@ export interface Subtask {
   done: boolean;
   sort_order: number;
   note: string | null;
+  assignee_staff_id: string | null;
+}
+
+export interface Staff {
+  id: string;
+  owner_id: string;
+  name: string;
+  email: string | null;
+  linked_user_id: string | null;
+  sort_order: number;
+  created_at: string;
 }
 
 export interface Category {

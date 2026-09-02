@@ -23,7 +23,7 @@ import { SubtaskRow } from "./SubtaskRow";
 import { categoryProgress } from "@/lib/progress";
 import { useSyncedField } from "@/lib/useSyncedField";
 import { useOptimisticValue } from "@/lib/useOptimisticValue";
-import type { CategoryWithSubtasks } from "@/lib/types";
+import type { CategoryWithSubtasks, Staff } from "@/lib/types";
 import {
   addSubtaskAction,
   deleteCategoryAction,
@@ -37,7 +37,13 @@ function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : "操作失敗,請重新整理再試一次";
 }
 
-export function CategoryCard({ category }: { category: CategoryWithSubtasks }) {
+export function CategoryCard({
+  category,
+  staff,
+}: {
+  category: CategoryWithSubtasks;
+  staff: Staff[];
+}) {
   const [, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const addSubtaskFormRef = useRef<HTMLFormElement>(null);
@@ -222,7 +228,7 @@ export function CategoryCard({ category }: { category: CategoryWithSubtasks }) {
         >
           <div className="space-y-1">
             {orderedSubtasks.map((subtask) => (
-              <SubtaskRow key={subtask.id} subtask={subtask} />
+              <SubtaskRow key={subtask.id} subtask={subtask} staff={staff} />
             ))}
             {orderedSubtasks.length === 0 && (
               <p className="px-1.5 py-1 text-xs text-muted">還沒有小項目</p>

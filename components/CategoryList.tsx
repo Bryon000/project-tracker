@@ -19,14 +19,16 @@ import {
 import { CategoryCard } from "./CategoryCard";
 import { useOptimisticValue } from "@/lib/useOptimisticValue";
 import { reorderCategoriesAction } from "@/app/projects/[projectId]/actions";
-import type { CategoryWithSubtasks } from "@/lib/types";
+import type { CategoryWithSubtasks, Staff } from "@/lib/types";
 
 export function CategoryList({
   projectId,
   categories,
+  staff,
 }: {
   projectId: string;
   categories: CategoryWithSubtasks[];
+  staff: Staff[];
 }) {
   const [ordered, setOrdered] = useOptimisticValue(categories);
   const [error, setError] = useState<string | null>(null);
@@ -66,7 +68,7 @@ export function CategoryList({
         >
           <div className="space-y-3">
             {ordered.map((category) => (
-              <CategoryCard key={category.id} category={category} />
+              <CategoryCard key={category.id} category={category} staff={staff} />
             ))}
           </div>
         </SortableContext>

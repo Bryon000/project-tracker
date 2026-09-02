@@ -52,6 +52,16 @@ async function requireTodoAccess(todoId: string) {
   return projectId;
 }
 
+/** 確認這個 staffId 真的屬於「這個專案的花名冊」,不是隨便一個別的 owner 的員工。 */
+async function requireProjectStaffAccess(projectId: string, staffId: string) {
+  await requireProjectAccess(projectId);
+  const ownerId = await queries.getProjectOwnerId(projectId);
+  const staffOwnerId = await queries.getStaffOwnerId(staffId);
+  if (!ownerId || !staffOwnerId || ownerId !== staffOwnerId) {
+    throw new Error("你沒有這位員工的存取權限");
+  }
+}
+
 // ---------- Categories ----------
 
 export async function addCategoryAction(projectId: string, formData: FormData) {
@@ -144,6 +154,22 @@ export async function reorderSubtasksAction(categoryId: string, orderedIds: stri
   revalidatePath(`/projects/${projectId}`);
 }
 
+export async function updateSubtaskAssigneeAction(
+  subtaskId: string,
+  staffId: string | null
+) {
+  const projectId = await requireSubtaskAccess(subtaskId);
+  if (staffId) {
+    const ownerId = await queries.getProjectOwnerId(projectId);
+    const staffOwnerId = await queries.getStaffOwnerId(staffId);
+    if (!ownerId || !staffOwnerId || ownerId !== staffOwnerId) {
+      throw new Error("這位員工不屬於這個專案的花名冊");
+    }
+  }
+  await queries.updateSubtaskAssignee(subtaskId, staffId);
+  revalidatePath(`/projects/${projectId}`);
+}
+
 // ---------- Todos ----------
 
 export async function addTodoAction(projectId: string, formData: FormData) {
@@ -173,4 +199,31 @@ export async function deleteProjectAction(projectId: string) {
   await queries.deleteProject(projectId);
   revalidatePath("/projects");
   redirect("/projects");
+}
+
+// ---------- Staff ----------
+
+const STAFF_LIMIT = 30;
+
+export async function addStaffAction(projectId: string, formData: FormData) {
+  await requireProjectAccess(projectId);
+  const ownerId = await queries.getProjectOwnerId(projectId);
+  if (!ownerId) throw new Error("找不到這個專案");
+
+  const existing = await queries.getStaffForOwner(ownerId);
+  if (existing.length >= STAFF_LIMIT) {
+    throw new Error(`員工人數已達上限(${STAFF_LIMIT} 人)`);
+  }
+
+  const name = String(formData.get("name") ?? "").trim();
+  if (!name) return;
+  const email = String(formData.get("email") ?? "").trim();
+  await queries.addStaff(ownerId, name, email || null);
+  revalidatePath(`/projects/${projectId}`);
+}
+
+export async function deleteStaffAction(projectId: string, staffId: string) {
+  await requireProjectStaffAccess(projectId, staffId);
+  await queries.deleteStaff(staffId);
+  revalidatePath(`/projects/${projectId}`);
 }

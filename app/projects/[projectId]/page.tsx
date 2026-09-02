@@ -4,16 +4,17 @@ import {
   getCategoriesWithSubtasks,
   getProject,
   getProjectMemberRole,
+  getStaffForOwner,
   getTodos,
 } from "@/lib/queries";
 import { requireUser } from "@/lib/auth";
 import { overallProgress } from "@/lib/progress";
 import { OverallProgress } from "@/components/OverallProgress";
-import { CategoryList } from "@/components/CategoryList";
-import { AddCategoryForm } from "@/components/AddCategoryForm";
+import { BoardSection } from "@/components/BoardSection";
 import { TodoList } from "@/components/TodoList";
 import { ShareDialog } from "@/components/ShareDialog";
 import { DeleteProjectButton } from "@/components/DeleteProjectButton";
+import { StaffManagerDialog } from "@/components/StaffManagerDialog";
 
 export const dynamic = "force-dynamic";
 
@@ -30,9 +31,10 @@ export default async function ProjectBoardPage({
   const role = await getProjectMemberRole(params.projectId, user.id);
   if (!role) notFound();
 
-  const [categories, todos] = await Promise.all([
+  const [categories, todos, staff] = await Promise.all([
     getCategoriesWithSubtasks(params.projectId),
     getTodos(params.projectId),
+    getStaffForOwner(project.created_by),
   ]);
 
   const progress = overallProgress(categories);
@@ -47,6 +49,7 @@ export default async function ProjectBoardPage({
           <h1 className="mt-1 text-xl font-semibold">{project.name}</h1>
         </div>
         <div className="flex items-center gap-2">
+          <StaffManagerDialog projectId={project.id} staff={staff} />
           <ShareDialog />
           {role === "owner" && (
             <DeleteProjectButton projectId={project.id} projectName={project.name} />
@@ -58,8 +61,7 @@ export default async function ProjectBoardPage({
 
       <section className="space-y-3">
         <h2 className="text-sm font-semibold text-muted">事項分類</h2>
-        <CategoryList projectId={project.id} categories={categories} />
-        <AddCategoryForm projectId={project.id} />
+        <BoardSection projectId={project.id} categories={categories} staff={staff} />
       </section>
 
       <TodoList projectId={project.id} todos={todos} />

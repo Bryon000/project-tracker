@@ -44,5 +44,20 @@ create table todos (
   created_at timestamptz not null default now()
 );
 
+-- 員工花名冊:屬於「專案擁有者」(owner_id = projects.created_by),不是綁在單一專案,
+-- 所以同一個 owner 名下的每個專案都會看到同一份員工列表。email 是給以後 Google 登入
+-- 做綁定用的,linked_user_id 綁定前是 null。
+create table staff (
+  id uuid primary key default uuid_generate_v4(),
+  owner_id uuid not null,
+  name text not null,
+  email text,
+  linked_user_id uuid,
+  sort_order int not null default 0,
+  created_at timestamptz not null default now()
+);
+
+alter table subtasks add column assignee_staff_id uuid references staff(id) on delete set null;
+
 -- Phase 1 先不開 RLS,方便用假使用者測試
 -- Phase 2 接上登入後,記得在每張表加上對應的 RLS policy

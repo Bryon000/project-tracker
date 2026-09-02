@@ -6,10 +6,11 @@ import { CSS } from "@dnd-kit/utilities";
 import { ReminderBadge } from "./ReminderBadge";
 import { useSyncedField } from "@/lib/useSyncedField";
 import { useOptimisticValue } from "@/lib/useOptimisticValue";
-import type { Subtask } from "@/lib/types";
+import type { Staff, Subtask } from "@/lib/types";
 import {
   deleteSubtaskAction,
   toggleSubtaskDoneAction,
+  updateSubtaskAssigneeAction,
   updateSubtaskDeadlineAction,
   updateSubtaskNameAction,
   updateSubtaskNoteAction,
@@ -19,7 +20,15 @@ function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : "操作失敗,請重新整理再試一次";
 }
 
-export function SubtaskRow({ subtask }: { subtask: Subtask }) {
+export function SubtaskRow({
+  subtask,
+  staff,
+  sortable = true,
+}: {
+  subtask: Subtask;
+  staff: Staff[];
+  sortable?: boolean;
+}) {
   const [, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const nameField = useSyncedField(subtask.name);
@@ -29,9 +38,11 @@ export function SubtaskRow({ subtask }: { subtask: Subtask }) {
   const [noteOpen, setNoteOpen] = useState(!!subtask.note);
 
   // 拖曳的 ref/style 掛在最外層(下面那個 <div>),備註展開的文字框跟這一列都在同一個
-  // 外層容器裡,拖曳小項目時備註會一起移動,不會被拆開。
+  // 外層容器裡,拖曳小項目時備註會一起移動,不會被拆開。sortable=false(例如員工的個人任務
+  // 篩選畫面)時用 disabled 關掉拖曳互動,但還是要呼叫這個 hook,因為外層一定有包 DndContext。
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: subtask.id,
+    disabled: !sortable,
   });
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -71,6 +82,15 @@ export function SubtaskRow({ subtask }: { subtask: Subtask }) {
     });
   }
 
+  function changeAssignee(e: React.ChangeEvent<HTMLSelectElement>) {
+    const staffId = e.target.value || null;
+    startTransition(() => {
+      updateSubtaskAssigneeAction(subtask.id, staffId).catch((err) =>
+        setError(errorMessage(err))
+      );
+    });
+  }
+
   function remove() {
     startTransition(() => {
       deleteSubtaskAction(subtask.id).catch((err) => setError(errorMessage(err)));
@@ -88,14 +108,16 @@ export function SubtaskRow({ subtask }: { subtask: Subtask }) {
   return (
     <div ref={setNodeRef} style={style} className="space-y-1">
       <div className="flex items-center gap-2 rounded px-1.5 py-1 text-sm hover:bg-bg">
-        <button
-          {...attributes}
-          {...listeners}
-          className="shrink-0 cursor-grab touch-none text-muted hover:text-accent active:cursor-grabbing"
-          aria-label="拖曳排序小項目"
-        >
-          ⠿
-        </button>
+        {sortable && (
+          <button
+            {...attributes}
+            {...listeners}
+            className="shrink-0 cursor-grab touch-none text-muted hover:text-accent active:cursor-grabbing"
+            aria-label="拖曳排序小項目"
+          >
+            ⠿
+          </button>
+        )}
         <input
           type="checkbox"
           checked={optimisticDone}
@@ -115,6 +137,18 @@ export function SubtaskRow({ subtask }: { subtask: Subtask }) {
             optimisticDone ? "text-muted line-through" : ""
           }`}
         />
+        <select
+          value={subtask.assignee_staff_id ?? ""}
+          onChange={changeAssignee}
+          className="shrink-0 rounded border border-border bg-bg px-1.5 py-0.5 text-xs text-muted outline-none focus:border-accent"
+        >
+          <option value="">未指派</option>
+          {staff.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.name}
+            </option>
+          ))}
+        </select>
         <input
           type="date"
           value={deadlineField.value}
