@@ -49,3 +49,33 @@ export function deadlineStatus(deadline: string | null): DeadlineStatus {
 export function deadlineDaysLeft(deadline: string): number {
   return daysUntil(deadline);
 }
+
+export interface UrgentSubtask {
+  id: string;
+  name: string;
+  categoryName: string;
+  deadline: string;
+  status: Extract<DeadlineStatus, "overdue" | "soon">;
+}
+
+/** 全專案範圍內已逾期或 3 天內到期、還沒完成的小項目,依到期日由舊到新排序
+ * (逾期的日期一定比即將到期的早,所以這樣排序自然就是「最急的排最前面」)。 */
+export function getUrgentSubtasks(categories: CategoryWithSubtasks[]): UrgentSubtask[] {
+  const items: UrgentSubtask[] = [];
+  for (const category of categories) {
+    for (const subtask of category.subtasks) {
+      if (subtask.done || !subtask.deadline) continue;
+      const status = deadlineStatus(subtask.deadline);
+      if (status === "overdue" || status === "soon") {
+        items.push({
+          id: subtask.id,
+          name: subtask.name,
+          categoryName: category.name,
+          deadline: subtask.deadline,
+          status,
+        });
+      }
+    }
+  }
+  return items.sort((a, b) => a.deadline.localeCompare(b.deadline));
+}

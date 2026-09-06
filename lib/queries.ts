@@ -160,6 +160,29 @@ export async function getCategoriesWithSubtasks(
   return (data ?? []) as CategoryWithSubtasks[];
 }
 
+/** 專案列表頁要顯示每個專案的進度/逾期摘要,一次把多個專案的類別+小項目都抓回來,
+ * 用 project_id 分組,避免對每個專案各別查一次(N+1)。 */
+export async function getCategoriesWithSubtasksForProjects(
+  projectIds: string[]
+): Promise<Record<string, CategoryWithSubtasks[]>> {
+  const grouped: Record<string, CategoryWithSubtasks[]> = {};
+  for (const id of projectIds) grouped[id] = [];
+  if (projectIds.length === 0) return grouped;
+
+  const { data, error } = await supabaseAdmin
+    .from("categories")
+    .select("*, subtasks(*)")
+    .in("project_id", projectIds)
+    .order("sort_order", { ascending: true })
+    .order("sort_order", { ascending: true, foreignTable: "subtasks" });
+  if (error) throw error;
+
+  for (const category of (data ?? []) as CategoryWithSubtasks[]) {
+    grouped[category.project_id].push(category);
+  }
+  return grouped;
+}
+
 export async function addCategory(
   projectId: string,
   name: string
