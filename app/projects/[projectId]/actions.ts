@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import * as queries from "@/lib/queries";
 import { requireUser } from "@/lib/auth";
+import { sendLineMessage } from "@/lib/line";
 
 // 這幾個 require*Access 都是從資料庫查出「這個 id 實際屬於哪個專案」,
 // 再檢查目前使用者是不是那個專案的成員 —— 不能只信任前端傳來的 projectId,
@@ -225,5 +226,38 @@ export async function addStaffAction(projectId: string, formData: FormData) {
 export async function deleteStaffAction(projectId: string, staffId: string) {
   await requireProjectStaffAccess(projectId, staffId);
   await queries.deleteStaff(staffId);
+  revalidatePath(`/projects/${projectId}`);
+}
+
+// ---------- LINE 提醒 ----------
+
+export async function generateLineLinkCodeAction(projectId: string) {
+  await requireProjectAccess(projectId);
+  const project = await queries.getProject(projectId);
+  if (project?.line_group_id) {
+    throw new Error("這個專案已經綁定群組了,請先解除綁定才能產生新代碼");
+  }
+  await queries.generateProjectLinkCode(projectId);
+  revalidatePath(`/projects/${projectId}`);
+}
+
+export async function unbindLineGroupAction(projectId: string) {
+  await requireProjectAccess(projectId);
+  const project = await queries.getProject(projectId);
+  const oldGroupId = project?.line_group_id ?? null;
+
+  await queries.unbindProjectLineGroup(projectId);
+
+  if (oldGroupId && project) {
+    try {
+      await sendLineMessage(
+        `此群組的「${project.name}」提醒已被管理者解除,將不再收到每日提醒。`,
+        oldGroupId
+      );
+    } catch (err) {
+      console.error("Failed to notify unbound group:", err);
+    }
+  }
+
   revalidatePath(`/projects/${projectId}`);
 }

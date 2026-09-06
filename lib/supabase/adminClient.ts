@@ -13,9 +13,17 @@ if (!supabaseUrl || !supabaseServiceRoleKey) {
   );
 }
 
+// Next.js 會全域 patch fetch() 並預設把回應放進它自己的 Data Cache——即使頁面/路由設了
+// dynamic = "force-dynamic",這個快取有時還是會套用到「第三方套件內部呼叫的 fetch」
+// (例如這裡的 supabase-js),導致讀到舊資料(實測發生在 /api/cron/reminders:小項目
+// 明明已經在資料庫改成未完成,route handler 讀到的還是改之前的內容)。這裡強制每個
+// 請求都帶 cache: "no-store",確保絕對讀到當下的資料庫狀態,不會被 Next 的快取層蓋掉。
 export const supabaseAdmin = createClient(supabaseUrl, supabaseServiceRoleKey, {
   auth: {
     persistSession: false,
     autoRefreshToken: false,
+  },
+  global: {
+    fetch: (input, init) => fetch(input, { ...init, cache: "no-store" }),
   },
 });

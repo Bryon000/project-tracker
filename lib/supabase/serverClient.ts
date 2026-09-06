@@ -26,6 +26,11 @@ export function createClient() {
           }
         },
       },
+      // 跟 adminClient.ts 一樣的理由:強制不讓 Next.js 的 Data Cache 快取這裡的請求。
+      // 驗證登入狀態這種事一旦被快取蓋到舊回應,後果是嚴重的權限/資安問題。
+      global: {
+        fetch: (input, init) => fetch(input, { ...init, cache: "no-store" }),
+      },
     }
   );
 }

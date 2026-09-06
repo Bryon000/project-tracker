@@ -1,5 +1,6 @@
 import "server-only";
 import { supabaseAdmin } from "./supabase/adminClient";
+import { generateLineLinkCode } from "./lineLinkCode";
 import type {
   Category,
   CategoryWithSubtasks,
@@ -425,61 +426,127 @@ export async function updateSubtaskAssignee(
   if (error) throw error;
 }
 
-// ---------- Reminders ----------
+// ---------- LINE 群組綁定 ----------
+//
+// 每個專案最多綁一個 LINE 群組,line_group_id 有 DB 層級的 unique 限制,
+// 就算程式邏輯有漏洞,也不可能讓兩個專案同時指向同一個群組。
+// 綁定/解除綁定都是「條件式 UPDATE」,不是單純的查了再寫,避免競態下互相覆蓋。
 
-export interface ReminderSubtask {
-  id: string;
-  name: string;
-  deadline: string;
-  projectId: string;
-  projectName: string;
-  assigneeName: string | null;
-}
+const LINE_LINK_CODE_TTL_MS = 15 * 60 * 1000;
 
-interface ReminderRow {
-  id: string;
-  name: string;
-  deadline: string;
-  categories: { name: string; projects: { id: string; name: string } | null } | null;
-  staff: { name: string } | null;
-}
+/** 產生一組新的連結代碼給這個專案(只有還沒綁定群組時才允許,呼叫端要先檢查)。 */
+export async function generateProjectLinkCode(
+  projectId: string
+): Promise<{ code: string; expiresAt: string }> {
+  const code = generateLineLinkCode();
+  const expiresAt = new Date(Date.now() + LINE_LINK_CODE_TTL_MS).toISOString();
 
-/**
- * 還沒完成、有設 deadline 的小項目,跨這個部署裡的所有專案(不分 owner)。
- * 目前這個 app 是單一團隊在用,所以提醒訊息全部丟進同一個 LINE 群組;
- * 之後如果真的有多個不相干的 owner 各自用這個部署,這裡要改成依 owner 分開發送。
- *
- * 這裡一定要撈 project id(不能只用 project 名稱分組)——名稱沒有唯一性限制,
- * 兩個不同專案剛好同名的話,只用名稱分組會把它們的任務錯誤地混成一組。
- */
-export async function getSubtasksNeedingReminder(): Promise<ReminderSubtask[]> {
-  const { data, error } = await supabaseAdmin
-    .from("subtasks")
-    .select("id, name, deadline, categories(name, projects(id, name)), staff(name)")
-    .eq("done", false)
-    .not("deadline", "is", null);
+  const { error } = await supabaseAdmin
+    .from("projects")
+    .update({ line_link_code: code, line_link_code_expires_at: expiresAt })
+    .eq("id", projectId)
+    .is("line_group_id", null);
   if (error) throw error;
 
-  const rows = (data ?? []) as unknown as ReminderRow[];
-  return rows.map((row) => ({
-    id: row.id,
-    name: row.name,
-    deadline: row.deadline,
-    projectId: row.categories?.projects?.id ?? "",
-    projectName: row.categories?.projects?.name ?? "未命名專案",
-    assigneeName: row.staff?.name ?? null,
-  }));
+  return { code, expiresAt };
+}
+
+/** 清空這個專案目前的群組綁定(解除綁定)。呼叫端如果要通知舊群組「已被解除」,
+ * 要先自己讀一次 project.line_group_id 再呼叫這個函式——更新後這個值就是 null 了。 */
+export async function unbindProjectLineGroup(projectId: string): Promise<void> {
+  const { error } = await supabaseAdmin
+    .from("projects")
+    .update({
+      line_group_id: null,
+      line_bound_at: null,
+      line_link_code: null,
+      line_link_code_expires_at: null,
+    })
+    .eq("id", projectId);
+  if (error) throw error;
+}
+
+export async function getProjectByGroupId(groupId: string): Promise<Project | null> {
+  const { data, error } = await supabaseAdmin
+    .from("projects")
+    .select("*")
+    .eq("line_group_id", groupId)
+    .maybeSingle();
+  if (error) throw error;
+  return data;
 }
 
 /**
- * 幫今天這個日期「搶一個發送名額」,搶到才可以真的發 LINE 訊息。
- * 靠 reminder_sends.sent_date 的 unique 限制當鎖:同一天第二次呼叫一定會 insert 失敗
- * (code 23505 = unique_violation),回傳 false,呼叫端就知道今天已經發過、不要再發一次。
+ * 拿使用者在群組裡貼的代碼,嘗試綁定這個群組。整個「檢查代碼有效 + 檢查專案還沒綁定 +
+ * 寫入」都在同一句條件式 UPDATE 裡完成,避免「先查後寫」中間被別的請求(webhook 重複
+ * 投遞、或剛好另一個綁定動作)插隊造成的競態。綁定成功回傳更新後的 project,失敗
+ * (代碼不對/過期/專案已經被綁走/群組已經被別的專案搶先綁走)回傳 null。
  */
-export async function hasReminderBeenSentToday(sentDate: string): Promise<boolean> {
+export async function tryBindProjectByLinkCode(
+  code: string,
+  groupId: string
+): Promise<Project | null> {
+  const { data, error } = await supabaseAdmin
+    .from("projects")
+    .update({
+      line_group_id: groupId,
+      line_link_code: null,
+      line_link_code_expires_at: null,
+      line_bound_at: new Date().toISOString(),
+    })
+    .eq("line_link_code", code)
+    .is("line_group_id", null)
+    .gt("line_link_code_expires_at", new Date().toISOString())
+    .select()
+    .maybeSingle();
+  if (error) {
+    // 23505 = unique_violation:這個 groupId 剛好在這一瞬間被別的專案搶先綁走了。
+    if (error.code === "23505") return null;
+    throw error;
+  }
+  return data;
+}
+
+/** bot 被踢出/離開一個群組時呼叫:找出綁定這個群組的專案並清空,避免變成殭屍設定
+ * (排程每天對一個 bot 已經不在的群組推播、卻永遠沒人知道已經失效)。 */
+export async function clearProjectByGroupId(groupId: string): Promise<void> {
+  const { error } = await supabaseAdmin
+    .from("projects")
+    .update({ line_group_id: null, line_bound_at: null })
+    .eq("line_group_id", groupId);
+  if (error) throw error;
+}
+
+// ---------- Reminders ----------
+
+export interface ProjectWithLineGroup {
+  id: string;
+  name: string;
+  created_by: string;
+  line_group_id: string;
+}
+
+export async function getProjectsWithLineGroup(): Promise<ProjectWithLineGroup[]> {
+  const { data, error } = await supabaseAdmin
+    .from("projects")
+    .select("id, name, created_by, line_group_id")
+    .not("line_group_id", "is", null);
+  if (error) throw error;
+  return (data ?? []) as ProjectWithLineGroup[];
+}
+
+/**
+ * 這個專案今天發過提醒了嗎——靠 reminder_sends 的 (project_id, sent_date) unique
+ * 限制當鎖,同一天第二次呼叫一定會 insert 失敗(23505),回傳 false 代表還沒發過。
+ */
+export async function hasReminderBeenSentToday(
+  projectId: string,
+  sentDate: string
+): Promise<boolean> {
   const { data, error } = await supabaseAdmin
     .from("reminder_sends")
     .select("id")
+    .eq("project_id", projectId)
     .eq("sent_date", sentDate)
     .maybeSingle();
   if (error) throw error;
@@ -488,7 +555,9 @@ export async function hasReminderBeenSentToday(sentDate: string): Promise<boolea
 
 /** 只有在真的成功發送之後才呼叫這個 —— 先佔位再發送的話,只要那次發送失敗
  * (不管是暫時性問題還是設定錯誤),當天就再也不會重試,這比重複發送更糟。 */
-export async function markReminderSent(sentDate: string): Promise<void> {
-  const { error } = await supabaseAdmin.from("reminder_sends").insert({ sent_date: sentDate });
+export async function markReminderSent(projectId: string, sentDate: string): Promise<void> {
+  const { error } = await supabaseAdmin
+    .from("reminder_sends")
+    .insert({ project_id: projectId, sent_date: sentDate });
   if (error && error.code !== "23505") throw error;
 }

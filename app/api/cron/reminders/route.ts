@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import {
-  getSubtasksNeedingReminder,
+  getCategoriesWithSubtasks,
+  getProjectsWithLineGroup,
+  getStaffForOwner,
   hasReminderBeenSentToday,
   markReminderSent,
-  type ReminderSubtask,
 } from "@/lib/queries";
 import { deadlineStatus, todayInTeamTimezone } from "@/lib/progress";
 import { sendLineMessage } from "@/lib/line";
@@ -12,13 +13,12 @@ import { secureCompare } from "@/lib/secureCompare";
 export const dynamic = "force-dynamic";
 
 // LINE 文字訊息上限是 5000 字元,留一點餘裕避免剛好卡在邊界。
-// 超過的話用截斷而不是讓 LINE API 直接拒絕整則訊息 —— 不然那天的提醒會整個發不出去。
 const LINE_MESSAGE_LIMIT = 4500;
 
-interface ProjectGroup {
-  projectName: string;
-  overdue: ReminderSubtask[];
-  soon: ReminderSubtask[];
+interface ReminderItem {
+  name: string;
+  deadline: string;
+  assigneeName: string | null;
 }
 
 function formatDeadline(iso: string): string {
@@ -31,26 +31,18 @@ function formatDate(iso: string): string {
   return `${year}/${month}/${day}`;
 }
 
-function taskLine(s: ReminderSubtask): string {
-  const who = s.assigneeName ? `(${s.assigneeName})` : "";
-  return `・${s.name}${who} - ${formatDeadline(s.deadline)} 到期`;
+function taskLine(item: ReminderItem): string {
+  const who = item.assigneeName ? `(${item.assigneeName})` : "";
+  return `・${item.name}${who} - ${formatDeadline(item.deadline)} 到期`;
 }
 
-function formatMessage(byProject: Map<string, ProjectGroup>): string {
-  const header = `📋 每日任務提醒(${formatDate(todayInTeamTimezone())})`;
+function formatMessage(projectName: string, overdue: ReminderItem[], soon: ReminderItem[]): string {
+  const header = `📋 每日任務提醒(${formatDate(todayInTeamTimezone())})— ${projectName}`;
+  const lines: string[] = [];
+  if (overdue.length > 0) lines.push("🔴 已逾期", ...overdue.map(taskLine));
+  if (soon.length > 0) lines.push("🟡 即將到期", ...soon.map(taskLine));
 
-  const sections = Array.from(byProject.values()).map(({ projectName, overdue, soon }) => {
-    const lines = [`【${projectName}】`];
-    if (overdue.length > 0) {
-      lines.push("🔴 已逾期", ...overdue.map(taskLine));
-    }
-    if (soon.length > 0) {
-      lines.push("🟡 即將到期", ...soon.map(taskLine));
-    }
-    return lines.join("\n");
-  });
-
-  const full = [header, "", ...sections].join("\n\n");
+  const full = [header, "", ...lines].join("\n");
   if (full.length <= LINE_MESSAGE_LIMIT) return full;
   return `${full.slice(0, LINE_MESSAGE_LIMIT)}\n\n...(訊息過長,已截斷,請到系統查看完整清單)`;
 }
@@ -65,6 +57,49 @@ function isAuthorized(request: Request): boolean {
   return secureCompare(provided, `Bearer ${cronSecret}`);
 }
 
+async function sendReminderForProject(
+  project: { id: string; name: string; created_by: string; line_group_id: string },
+  today: string
+) {
+  if (await hasReminderBeenSentToday(project.id, today)) {
+    return { projectId: project.id, sent: false, reason: "今天已經執行過了" };
+  }
+
+  const [categories, staff] = await Promise.all([
+    getCategoriesWithSubtasks(project.id),
+    getStaffForOwner(project.created_by),
+  ]);
+  const staffNameById = new Map(staff.map((s) => [s.id, s.name]));
+
+  const overdue: ReminderItem[] = [];
+  const soon: ReminderItem[] = [];
+  for (const category of categories) {
+    for (const subtask of category.subtasks) {
+      if (subtask.done || !subtask.deadline) continue;
+      const status = deadlineStatus(subtask.deadline);
+      if (status !== "overdue" && status !== "soon") continue;
+
+      const item: ReminderItem = {
+        name: subtask.name,
+        deadline: subtask.deadline,
+        assigneeName: subtask.assignee_staff_id
+          ? staffNameById.get(subtask.assignee_staff_id) ?? null
+          : null,
+      };
+      (status === "overdue" ? overdue : soon).push(item);
+    }
+  }
+
+  if (overdue.length === 0 && soon.length === 0) {
+    return { projectId: project.id, sent: false, reason: "沒有需要提醒的項目" };
+  }
+
+  await sendLineMessage(formatMessage(project.name, overdue, soon), project.line_group_id);
+  await markReminderSent(project.id, today);
+
+  return { projectId: project.id, sent: true, overdueCount: overdue.length, soonCount: soon.length };
+}
+
 export async function GET(request: Request) {
   if (!isAuthorized(request)) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
@@ -73,42 +108,22 @@ export async function GET(request: Request) {
   const today = todayInTeamTimezone();
 
   try {
-    // 今天已經發過了(不管是 Vercel Cron 自己重試,還是 CRON_SECRET 萬一外洩被重複觸發),
-    // 直接跳過,一天最多只會真的發一次。注意:這個記錄要等發送真的成功之後才會寫入
-    // (看下面 markReminderSent 那行)—— 不能先佔位再發送,不然只要中途失敗一次
-    // (不管什麼原因),當天就再也不會重試,那比重複發送更糟。
-    if (await hasReminderBeenSentToday(today)) {
-      return NextResponse.json({ sent: false, reason: "今天已經執行過了" });
-    }
+    const projects = await getProjectsWithLineGroup();
 
-    const subtasks = await getSubtasksNeedingReminder();
+    // 每個專案各自 try/catch——一個專案發送失敗(例如群組已經失效)不該連累
+    // 其他專案的提醒也發不出去。
+    const results = await Promise.all(
+      projects.map(async (project) => {
+        try {
+          return await sendReminderForProject(project, today);
+        } catch (err) {
+          console.error(`Reminder failed for project ${project.id}:`, err);
+          return { projectId: project.id, sent: false, error: "發送失敗,詳情看 server log" };
+        }
+      })
+    );
 
-    const byProject = new Map<string, ProjectGroup>();
-    for (const s of subtasks) {
-      const status = deadlineStatus(s.deadline);
-      if (status !== "overdue" && status !== "soon") continue;
-
-      if (!byProject.has(s.projectId)) {
-        byProject.set(s.projectId, { projectName: s.projectName, overdue: [], soon: [] });
-      }
-      byProject.get(s.projectId)![status].push(s);
-    }
-
-    if (byProject.size === 0) {
-      return NextResponse.json({ sent: false, reason: "沒有需要提醒的項目" });
-    }
-
-    await sendLineMessage(formatMessage(byProject));
-    await markReminderSent(today);
-
-    let overdueCount = 0;
-    let soonCount = 0;
-    for (const group of Array.from(byProject.values())) {
-      overdueCount += group.overdue.length;
-      soonCount += group.soon.length;
-    }
-
-    return NextResponse.json({ sent: true, overdueCount, soonCount });
+    return NextResponse.json({ results });
   } catch (err) {
     console.error("Reminder cron failed:", err);
     return NextResponse.json({ error: "發送提醒時發生錯誤,詳情看 server log" }, { status: 500 });

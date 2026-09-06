@@ -59,13 +59,26 @@ create table staff (
 
 alter table subtasks add column assignee_staff_id uuid references staff(id) on delete set null;
 
--- LINE 每日提醒的防重複發送鎖:cron 路由送出提醒前先寫一筆今天的日期進來,
--- 靠 sent_date 的 unique 限制擋掉「同一天被觸發兩次」(不管是 CRON_SECRET 外洩被亂打,
--- 還是 Vercel Cron 本身偶發重試),不會真的送出兩則重複的提醒。
+-- LINE 提醒改成綁在「專案」上(不是綁在使用者帳號上),一個群組同時只能屬於一個專案
+-- ——unique 限制是資料庫層級的保護,就算程式邏輯有漏洞,也不可能讓兩個專案同時指向
+-- 同一個群組。line_link_code/line_link_code_expires_at 是「連結代碼」機制:代碼有
+-- 時效、成功綁定後就清空(等於用過即失效),要換群組必須先把 line_group_id 清空
+-- (解除綁定)才能重新綁,不能直接覆蓋。
+alter table projects add column line_group_id text unique;
+alter table projects add column line_link_code text;
+alter table projects add column line_link_code_expires_at timestamptz;
+alter table projects add column line_bound_at timestamptz;
+
+-- 這張表原本是「全域一天一次」的防重複發送鎖,現在提醒改成依專案各自發送,
+-- 這裡直接重建成依 (project_id, sent_date) 防重複——因為之前只是測試資料,
+-- 沒有真的需要保留的紀錄,直接重建比改 schema 更乾淨。
+drop table if exists reminder_sends;
 create table reminder_sends (
   id uuid primary key default uuid_generate_v4(),
-  sent_date date not null unique,
-  created_at timestamptz not null default now()
+  project_id uuid not null references projects(id) on delete cascade,
+  sent_date date not null,
+  created_at timestamptz not null default now(),
+  unique (project_id, sent_date)
 );
 
 -- Phase 1 先不開 RLS,方便用假使用者測試

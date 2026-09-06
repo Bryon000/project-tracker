@@ -15,6 +15,7 @@ import { TodoList } from "@/components/TodoList";
 import { ShareDialog } from "@/components/ShareDialog";
 import { DeleteProjectButton } from "@/components/DeleteProjectButton";
 import { StaffManagerDialog } from "@/components/StaffManagerDialog";
+import { LineSettingsDialog } from "@/components/LineSettingsDialog";
 
 export const dynamic = "force-dynamic";
 
@@ -50,6 +51,7 @@ export default async function ProjectBoardPage({
         </div>
         <div className="flex items-center gap-2">
           <StaffManagerDialog projectId={project.id} staff={staff} />
+          <LineSettingsDialog project={project} />
           <ShareDialog />
           {role === "owner" && (
             <DeleteProjectButton projectId={project.id} projectName={project.name} />

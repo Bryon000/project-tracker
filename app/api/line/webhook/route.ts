@@ -1,6 +1,13 @@
 import { NextResponse } from "next/server";
 import { createHmac } from "node:crypto";
 import { secureCompare } from "@/lib/secureCompare";
+import { replyLineMessage } from "@/lib/line";
+import {
+  clearProjectByGroupId,
+  getProjectByGroupId,
+  tryBindProjectByLinkCode,
+} from "@/lib/queries";
+import { looksLikeLineLinkCode, normalizeLineLinkCode } from "@/lib/lineLinkCode";
 
 // LINE 平台要求 webhook 一定要驗證 x-line-signature,不然任何人都可以偽造事件打這個網址。
 // 驗法:用 channel secret 對「原始 request body」算 HMAC-SHA256,base64 編碼後比對。
@@ -12,10 +19,63 @@ function isValidSignature(rawBody: string, signature: string | null): boolean {
   return secureCompare(expected, signature);
 }
 
-// 目前這個 webhook 唯一的用途是幫你「拿到群組 ID」:把官方帳號拉進 LINE 群組、
-// 或群裡有人發訊息時,LINE 會打這個網址,事件裡的 source.groupId 就是你要的群組 ID —
-// 到 Vercel 的 Function Logs 找這行 log 就看得到。之後要做更多互動功能(例如回覆訊息)
-// 也是從這裡擴充。
+interface LineEvent {
+  type: string;
+  replyToken?: string;
+  source?: { type: string; groupId?: string };
+  message?: { type: string; text?: string };
+}
+
+async function handleJoin(event: LineEvent) {
+  const groupId = event.source?.groupId;
+  if (!groupId || !event.replyToken) return;
+
+  const existing = await getProjectByGroupId(groupId);
+  if (existing) {
+    await replyLineMessage(event.replyToken, `此群組已經綁定「${existing.name}」專案的每日提醒。`);
+    return;
+  }
+  await replyLineMessage(event.replyToken, "哈囉!請貼上要綁定的專案連結代碼,完成綁定後這裡就會收到每日任務提醒。");
+}
+
+async function handleLeave(event: LineEvent) {
+  const groupId = event.source?.groupId;
+  if (!groupId) return;
+  // bot 被踢出/離開群組,清掉對應專案的綁定,不然排程會一直對一個進不去的群組推播、
+  // 而且永遠沒人知道這個綁定其實已經失效。
+  await clearProjectByGroupId(groupId);
+}
+
+async function handleMessage(event: LineEvent) {
+  const groupId = event.source?.groupId;
+  const text = event.message?.text;
+  if (!groupId || !text || event.message?.type !== "text" || !event.replyToken) return;
+
+  // 群組已經綁定專案的話,不要再把裡面的日常聊天當成代碼去比對——不然團隊在群組裡
+  // 正常聊天,剛好打出符合代碼格式的字串,會被誤判成想換綁。
+  const existing = await getProjectByGroupId(groupId);
+  if (existing) return;
+
+  const code = normalizeLineLinkCode(text);
+  const bound = await tryBindProjectByLinkCode(code, groupId);
+  if (bound) {
+    await replyLineMessage(
+      event.replyToken,
+      `✅ 已連結到專案:${bound.name}\n之後這裡會收到這個專案的每日任務提醒。`
+    );
+    return;
+  }
+
+  // 綁定失敗:只有在「這則訊息長得像是有人在嘗試貼代碼」時才回覆提示,
+  // 不要對群組裡每一句不相關的閒聊都做出反應。
+  if (looksLikeLineLinkCode(text)) {
+    await replyLineMessage(
+      event.replyToken,
+      "找不到對應的專案代碼,請確認代碼是否正確、是否已過期,或回到專案頁面重新產生一組。"
+    );
+  }
+}
+
 export async function POST(request: Request) {
   const rawBody = await request.text();
   const signature = request.headers.get("x-line-signature");
@@ -25,9 +85,16 @@ export async function POST(request: Request) {
   }
 
   const body = JSON.parse(rawBody);
-  for (const event of body.events ?? []) {
-    if (event.source?.type === "group") {
-      console.log("LINE group event — groupId:", event.source.groupId);
+  const events: LineEvent[] = body.events ?? [];
+
+  for (const event of events) {
+    try {
+      if (event.type === "join") await handleJoin(event);
+      else if (event.type === "leave") await handleLeave(event);
+      else if (event.type === "message") await handleMessage(event);
+    } catch (err) {
+      // 一個事件處理失敗不該讓同一批送來的其他事件也處理不到,記錄下來繼續下一個。
+      console.error("LINE webhook event handling failed:", event.type, err);
     }
   }
 

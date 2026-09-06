@@ -5,6 +5,10 @@ export interface Project {
   name: string;
   created_by: string;
   created_at: string;
+  line_group_id: string | null;
+  line_link_code: string | null;
+  line_link_code_expires_at: string | null;
+  line_bound_at: string | null;
 }
 
 export interface ProjectMember {
