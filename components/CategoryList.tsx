@@ -61,7 +61,12 @@ export function CategoryList({
   return (
     <div className="space-y-3">
       {error && <p className="text-xs text-red-500">{error}</p>}
-      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+      <DndContext
+        id="category-list"
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragEnd={handleDragEnd}
+      >
         <SortableContext
           items={ordered.map((c) => c.id)}
           strategy={verticalListSortingStrategy}

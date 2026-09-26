@@ -81,5 +81,11 @@ create table reminder_sends (
   unique (project_id, sent_date)
 );
 
+-- 勾選完成的時間,給「已完成」收合區顯示「9/20 完成」用。取消勾選會清回 null;
+-- 加這個欄位之前就已經勾完的項目,這裡會是 null(只會顯示「已完成」,沒有日期)。
+alter table subtasks add column if not exists completed_at timestamptz;
+alter table todos add column if not exists completed_at timestamptz;
+alter table categories add column if not exists completed_at timestamptz;
+
 -- Phase 1 先不開 RLS,方便用假使用者測試
 -- Phase 2 接上登入後,記得在每張表加上對應的 RLS policy

@@ -10,6 +10,26 @@ import type {
   Todo,
 } from "./types";
 
+/**
+ * 勾選完成時記下完成時間,取消勾選就清掉(之後重新勾一次算新的完成時間)。
+ * 勾選時加上 .eq("done", false):如果這一項早就被別人勾完了(例如隊友那邊的分頁沒重新整理,
+ * 還以為沒完成又勾了一次),就什麼都不改,不會把原本真正的完成日期蓋掉。
+ */
+async function setDone(
+  table: "subtasks" | "todos" | "categories",
+  id: string,
+  done: boolean
+): Promise<void> {
+  const { error } = done
+    ? await supabaseAdmin
+        .from(table)
+        .update({ done: true, completed_at: new Date().toISOString() })
+        .eq("id", id)
+        .eq("done", false)
+    : await supabaseAdmin.from(table).update({ done: false, completed_at: null }).eq("id", id);
+  if (error) throw error;
+}
+
 // ---------- Projects ----------
 
 /** 目前使用者擁有,或被加入 project_members 的所有專案。 */
@@ -231,11 +251,7 @@ export async function toggleCategoryDone(
   categoryId: string,
   done: boolean
 ): Promise<void> {
-  const { error } = await supabaseAdmin
-    .from("categories")
-    .update({ done })
-    .eq("id", categoryId);
-  if (error) throw error;
+  await setDone("categories", categoryId, done);
 }
 
 export async function deleteCategory(categoryId: string): Promise<void> {
@@ -314,11 +330,7 @@ export async function toggleSubtaskDone(
   subtaskId: string,
   done: boolean
 ): Promise<void> {
-  const { error } = await supabaseAdmin
-    .from("subtasks")
-    .update({ done })
-    .eq("id", subtaskId);
-  if (error) throw error;
+  await setDone("subtasks", subtaskId, done);
 }
 
 export async function updateSubtaskNote(
@@ -378,8 +390,7 @@ export async function addTodo(projectId: string, text: string): Promise<Todo> {
 }
 
 export async function toggleTodo(todoId: string, done: boolean): Promise<void> {
-  const { error } = await supabaseAdmin.from("todos").update({ done }).eq("id", todoId);
-  if (error) throw error;
+  await setDone("todos", todoId, done);
 }
 
 export async function deleteTodo(todoId: string): Promise<void> {

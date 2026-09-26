@@ -30,6 +30,12 @@ export function todayInTeamTimezone(): string {
   return shifted.toISOString().slice(0, 10);
 }
 
+/** 時間戳記轉成團隊時區的「9/20」——同樣固定 UTC+8,伺服器跟瀏覽器才會印出一樣的字。 */
+export function formatTeamMonthDay(timestamp: string): string {
+  const shifted = new Date(new Date(timestamp).getTime() + TEAM_TZ_OFFSET_MS);
+  return `${shifted.getUTCMonth() + 1}/${shifted.getUTCDate()}`;
+}
+
 /** 以「今天」(固定 UTC+8)為基準,算出 deadline 距離今天的天數。 */
 function daysUntil(deadline: string): number {
   const today = new Date(`${todayInTeamTimezone()}T00:00:00Z`);

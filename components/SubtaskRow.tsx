@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { ReminderBadge } from "./ReminderBadge";
+import { CompletedBadge, ReminderBadge } from "./ReminderBadge";
 import { useSyncedField } from "@/lib/useSyncedField";
 import { useOptimisticValue } from "@/lib/useOptimisticValue";
 import type { Staff, Subtask } from "@/lib/types";
@@ -24,13 +24,20 @@ export function SubtaskRow({
   subtask,
   staff,
   sortable = true,
+  onDoneChange,
+  onError,
 }: {
   subtask: Subtask;
   staff: Staff[];
   sortable?: boolean;
+  /** 讓外層清單在勾選當下就把這一列搬進/搬出「已完成」區,不用等伺服器回應。 */
+  onDoneChange?: (subtaskId: string, done: boolean) => void;
+  /** 這一列可能在伺服器回應前就被搬到另一區(元件被卸載),錯誤要交給不會被卸載的外層顯示。 */
+  onError?: (message: string) => void;
 }) {
   const [, startTransition] = useTransition();
-  const [error, setError] = useState<string | null>(null);
+  const [localError, setLocalError] = useState<string | null>(null);
+  const setError = onError ?? setLocalError;
   const nameField = useSyncedField(subtask.name);
   const deadlineField = useSyncedField(subtask.deadline ?? "");
   const noteField = useSyncedField(subtask.note ?? "");
@@ -40,9 +47,11 @@ export function SubtaskRow({
   // 拖曳的 ref/style 掛在最外層(下面那個 <div>),備註展開的文字框跟這一列都在同一個
   // 外層容器裡,拖曳小項目時備註會一起移動,不會被拆開。sortable=false(例如員工的個人任務
   // 篩選畫面)時用 disabled 關掉拖曳互動,但還是要呼叫這個 hook,因為外層一定有包 DndContext。
+  // disabled 只給 true 的話,dnd-kit 只會關掉「拖曳」,這一列仍然是放置目標——拖曳別的項目經過
+  // 已完成區時會被判定成放到這裡,結果彈回原位什麼都沒做。所以兩邊都要明確關掉。
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: subtask.id,
-    disabled: !sortable,
+    disabled: sortable ? false : { draggable: true, droppable: true },
   });
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -63,10 +72,13 @@ export function SubtaskRow({
 
   function toggleDone() {
     const next = !optimisticDone;
+    const previous = subtask.done;
     setOptimisticDone(next);
+    onDoneChange?.(subtask.id, next);
     startTransition(() => {
       toggleSubtaskDoneAction(subtask.id, next).catch((err) => {
-        setOptimisticDone(subtask.done);
+        setOptimisticDone(previous);
+        onDoneChange?.(subtask.id, previous);
         setError(errorMessage(err));
       });
     });
@@ -157,7 +169,11 @@ export function SubtaskRow({
           onBlur={deadlineField.onBlur}
           className="shrink-0 rounded border border-border bg-bg px-1.5 py-0.5 text-xs text-muted outline-none focus:border-accent"
         />
-        <ReminderBadge deadline={subtask.deadline} />
+        {optimisticDone ? (
+          <CompletedBadge completedAt={subtask.done ? subtask.completed_at : null} />
+        ) : (
+          <ReminderBadge deadline={subtask.deadline} />
+        )}
         <button
           onClick={() => setNoteOpen((v) => !v)}
           className={`shrink-0 text-xs hover:text-accent ${
@@ -189,7 +205,7 @@ export function SubtaskRow({
           className="ml-9 w-[calc(100%-2.25rem)] resize-y rounded border border-border bg-bg px-2 py-1 text-xs text-ink outline-none focus:border-accent"
         />
       )}
-      {error && <p className="pl-9 text-xs text-red-500">{error}</p>}
+      {localError && <p className="pl-9 text-xs text-red-500">{localError}</p>}
     </div>
   );
 }

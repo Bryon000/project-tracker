@@ -27,6 +27,7 @@ export interface Subtask {
   sort_order: number;
   note: string | null;
   assignee_staff_id: string | null;
+  completed_at: string | null;
 }
 
 export interface Staff {
@@ -47,6 +48,7 @@ export interface Category {
   dri_url: string | null;
   done: boolean;
   sort_order: number;
+  completed_at: string | null;
 }
 
 export interface CategoryWithSubtasks extends Category {
@@ -59,6 +61,7 @@ export interface Todo {
   text: string;
   done: boolean;
   created_at: string;
+  completed_at: string | null;
 }
 
 export type DeadlineStatus = "overdue" | "soon" | "ok" | "none";
