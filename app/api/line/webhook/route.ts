@@ -7,15 +7,23 @@ import {
   getCategoriesWithSubtasks,
   getProjectByGroupId,
   getStaffForOwner,
+  getTodos,
   tryBindProjectByLinkCode,
 } from "@/lib/queries";
 import { looksLikeLineLinkCode, normalizeLineLinkCode } from "@/lib/lineLinkCode";
-import { collectReminderItems, formatOnDemandProgressMessage } from "@/lib/reminderMessage";
+import {
+  collectAllOpenItems,
+  collectReminderItems,
+  formatAllProgressMessage,
+  formatOnDemandProgressMessage,
+} from "@/lib/reminderMessage";
 import type { Project } from "@/lib/types";
 
 // 群組裡 @機器人 時,LINE 只有在使用者真的用 @ 選單點選機器人(而不是自己打字打出一樣的
 // 名字)才會帶這個關鍵字——所以不用擔心有人打字冒充。搭配「進度」關鍵字才觸發,單純
 // @機器人問別的事情不會有反應,避免每次被 @ 都跳出來插話。
+// 「所有進度」本身也包含「進度」兩個字,所以一定要先比對 ALL 再比對一般的。
+const ALL_PROGRESS_KEYWORD = "所有進度";
 const PROGRESS_KEYWORD = "進度";
 
 // LINE 平台要求 webhook 一定要驗證 x-line-signature,不然任何人都可以偽造事件打這個網址。
@@ -53,6 +61,16 @@ async function replyWithProgressList(replyToken: string, project: Project) {
   await replyLineMessage(replyToken, formatOnDemandProgressMessage(project.name, overdue, soon));
 }
 
+async function replyWithAllProgress(replyToken: string, project: Project) {
+  const [categories, staff, todos] = await Promise.all([
+    getCategoriesWithSubtasks(project.id),
+    getStaffForOwner(project.created_by),
+    getTodos(project.id),
+  ]);
+  const items = collectAllOpenItems(categories, staff);
+  await replyLineMessage(replyToken, formatAllProgressMessage(project.name, items, todos));
+}
+
 async function handleJoin(event: LineEvent) {
   const groupId = event.source?.groupId;
   if (!groupId || !event.replyToken) return;
@@ -79,11 +97,15 @@ async function handleMessage(event: LineEvent) {
   if (!groupId || !text || event.message?.type !== "text" || !event.replyToken) return;
 
   // 群組已經綁定專案的話,不要再把裡面的日常聊天當成代碼去比對——不然團隊在群組裡
-  // 正常聊天,剛好打出符合代碼格式的字串,會被誤判成想換綁。唯一的例外是「@機器人 進度」,
-  // 這是使用者特地要求的即時查詢功能,其他訊息(包含單純 @機器人問別的事)一律不回應。
+  // 正常聊天,剛好打出符合代碼格式的字串,會被誤判成想換綁。唯一的例外是「@機器人 進度」/
+  // 「@機器人 所有進度」,這是使用者特地要求的即時查詢功能,其他訊息(包含單純 @機器人
+  // 問別的事)一律不回應。
   const existing = await getProjectByGroupId(groupId);
   if (existing) {
-    if (isBotMentioned(event) && text.includes(PROGRESS_KEYWORD)) {
+    if (!isBotMentioned(event)) return;
+    if (text.includes(ALL_PROGRESS_KEYWORD)) {
+      await replyWithAllProgress(event.replyToken, existing);
+    } else if (text.includes(PROGRESS_KEYWORD)) {
       await replyWithProgressList(event.replyToken, existing);
     }
     return;
